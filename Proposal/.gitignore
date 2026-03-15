@@ -1,0 +1,43 @@
+# LaTeX auxiliary files
+*.lua
+*.in
+*.aux
+*.auxlock
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.idx
+*.ilg
+*.ind
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.xdy
+*.synctex(busy)
+# LaTeX build directories
+*.auxfiles/
+*.synctex/
+_minted-*/
+
+# PDF files (uncomment if you want to ignore PDFs)
+main.pdf
+
+# Editor files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup

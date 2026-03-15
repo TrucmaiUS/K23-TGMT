@@ -1,0 +1,70 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc} % Font tiếng Việt
+\usepackage[english]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs} % Kẻ bảng đẹp
+\usepackage{tabularx} % Bảng tự động canh lề
+\usepackage{tcolorbox} % Tạo khung nội dung đẹp
+\usepackage{float}
+\usepackage{titlesec}
+\usepackage{parskip} % Tạo khoảng cách giữa các đoạn văn
+\usepackage{caption}
+\usepackage{wrapfig}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+
+% Cấu hình box định nghĩa
+\newtcolorbox{infobox}[1]{colback=blue!5!white,colframe=blue!75!black,title=#1,fonttitle=\bfseries}
+
+\usepackage{hcmus-report-template}
+\usepackage[english]{babel}
+
+% Disable indentation on new paragraphs
+\setlength{\parindent}{0pt}
+
+
+% Line spacing 1.5
+\renewcommand{\baselinestretch}{1.5}
+
+% Optional: graphic path
+% \graphicspath{PATH_TO_GRAPHIC_FOLDER}
+
+% To use Times font family, uncomment this row
+% \usepackage{mathptmx}
+
+% To use roman section / subsection, uncomment these rows
+% \renewcommand{\thesection}{\Roman{section}}
+% \renewcommand{\thesubsection}{\thesection.\Roman{subsection}}
+
+% Footer
+\newcommand{\leftfooter}{Week 1}
+\lfoot{\leftfooter}
+
+% ============ DOCUMENT ============
+\begin{document}
+\input{content/bia.tex}
+
+\pagenumbering{roman}
+% \input{content/title.tex}% \pagebreak
+
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{section/Loi noi dau.tex}
+
+\clearpage
+\tableofcontents
+
+\newpage
+\input{section/Content.tex}
+
+% References
+\input{ref/ref.tex}
+
+% Appendix
+%\appendix
+% Add \cleardoublepage to move appendices to next page.
+%\input{appendix/appendix.tex}
+\end{document}

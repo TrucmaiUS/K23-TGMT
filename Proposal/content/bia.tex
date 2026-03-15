@@ -1,0 +1,58 @@
+\begin{titlepage}
+    \thispagestyle{empty}
+    
+    \begin{tikzpicture}[overlay, remember picture]
+        % Khung ngoài
+        \draw[line width=3.0pt, color=blue!30!black]
+            ($(current page.north west)+(1.2cm,-0.8cm)$)
+            rectangle
+            ($(current page.south east)+(-1.2cm,1.2cm)$);
+            
+        % Khung trong
+        \draw[line width=1.2pt, color=blue!40!black]
+            ($(current page.north west)+(1.35cm,-0.95cm)$)
+            rectangle
+            ($(current page.south east)+(-1.35cm,1.35cm)$);
+    \end{tikzpicture}
+
+    \begin{center}
+        \vspace*{-0.6cm}
+
+        {\fontsize{14}{17}\selectfont \textbf{ĐẠI HỌC QUỐC GIA TP.HCM}}\\[5pt]
+        {\fontsize{12}{15}\selectfont \textbf{TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN}}\\[5pt]
+        {\fontsize{12}{15}\selectfont \textbf{KHOA CÔNG NGHỆ THÔNG TIN}}\\[6pt]
+
+        \rule{7cm}{0.4pt}
+
+        \vspace{0.5cm}
+
+        \includegraphics[width=4.8cm]{img/hcmus-logo.png}
+
+        \vspace{0.2cm}
+
+        {\fontsize{14}{18}\selectfont BẢN ĐỀ XUẤT DỰ ÁN}\\[12pt]
+        {\fontsize{17}{21}\selectfont \textbf{THỊ GIÁC MÁY TÍNH}}\\[12pt]
+        {\fontsize{16}{20}\selectfont \textbf{Chủ đề: Person Re-Identification}}
+
+        \vspace{1.2cm}
+
+        \begin{minipage}{0.75\textwidth}
+            \fontsize{12}{15}\selectfont
+
+            \textbf{\large Sinh viên:}\\[5pt]
+            \textit{Nguyễn Lê Trúc Mai -- 23127224}\\
+            \textit{Trần Gia Huy -- 23127199}
+
+            \vspace{0.6cm}
+
+            \textbf{\large Giảng viên hướng dẫn:}\\[5pt]
+            \textit{TS. Võ Hoài Việt}\\
+            \textit{ThS. Phạm Thanh Tùng}\\
+            \textit{NCS, ThS. Phạm Minh Hoàng}
+        \end{minipage}
+
+        \vspace{1.0cm}
+
+        {\fontsize{12}{14}\selectfont TP. Hồ Chí Minh, ngày 18 tháng 03 năm 2025}
+    \end{center}
+\end{titlepage}
