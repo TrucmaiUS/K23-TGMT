@@ -1,8 +1,38 @@
 \section{Tổng quan nghiên cứu}
-\subsection{Phương pháp truyền thống}
-\subsection{Phương pháp Deep Learning}
-\subsection{Các hướng nghiên cứu hiện đại}
-\subsubsection*{Part-based methods}
-\subsubsection*{Multi-branch networks}
-\subsubsection*{Omni-scale networks}
-\subsubsection*{Transformer-based ReID}
+
+\subsection{Tổng quan bài toán Person Re-identification}
+Person Re-identification là bài toán tìm kiếm ảnh của cùng một người qua nhiều camera có khác biệt lớn về góc nhìn, ánh sáng, tư thế và mức độ che khuất. Các nghiên cứu hiện nay chủ yếu tập trung vào việc học đặc trưng phân biệt mạnh hơn và thiết kế hàm mất mát giúp tối ưu trực tiếp chất lượng xếp hạng. Hai độ đo thường dùng để đánh giá là \textbf{Rank-1} và \textbf{mAP}.
+
+\subsection{Nhóm phương pháp theo bộ phận cơ thể}
+Các phương pháp theo bộ phận cơ thể chia ảnh người thành nhiều vùng theo chiều dọc để học đặc trưng cục bộ. Hướng này giúp mô hình tập trung vào các chi tiết phân biệt như áo, quần, ba lô hoặc giày.
+
+Trong \textbf{Beyond Part Models: Person Retrieval with Refined Part Pooling (and a Strong Convolutional Baseline)} \cite{sun2018modelspersonretrievalrefined}, tác giả đề xuất biểu diễn người bằng nhiều vector đặc trưng theo từng phần cơ thể, sau đó tinh chỉnh quá trình gộp đặc trưng để tăng tính ổn định. Một hướng mở rộng quan trọng là kết hợp Part-based Convolutional Baseline/Refined Part Pooling với metric learning bên cạnh phân loại ID bằng Softmax, giúp cải thiện chất lượng truy hồi trong các trường hợp mẫu âm khó.
+
+Ngoài ra, \textbf{Learning Diverse Features with Part-Level Resolution for Person Re-Identification} \cite{xie2020learningdiversefeaturespartlevel} cho thấy việc học đa dạng đặc trưng ở mức phần cơ thể có thể tăng độ bền vững khi một số vùng bị nhiễu hoặc che khuất.
+
+\subsection{Nhóm CNN đa nhánh và đa tỉ lệ}
+Nhóm này khai thác thông tin ở nhiều mức hạt khác nhau để cân bằng giữa đặc trưng toàn cục và cục bộ. \textbf{Learning Discriminative Features with Multiple Granularities for Person Re-Identification} \cite{Wang_2018} sử dụng nhiều nhánh song song để trích xuất đặc trưng ở các độ phân giải khác nhau, nhờ đó tăng độ phân biệt cho bài toán xếp hạng.
+
+\textbf{Omni-Scale Feature Learning for Person Re-identification} \cite{zhou2019omniscalefeaturelearningperson} tập trung vào khả năng học đặc trưng ở nhiều vùng thụ cảm trong cùng một khối mạng, giúp mô hình thích nghi tốt với biến thiên kích thước và bối cảnh.
+
+\subsection{Nhóm Semantic alignment và Transformer}
+Nhóm này tập trung vào việc học quan hệ ngữ nghĩa giữa các vùng cơ thể và tăng khả năng mô hình hóa phụ thuộc dài hạn. Nhờ đó, mô hình có thể giảm sai lệch do thay đổi tư thế, góc nhìn và tình trạng thiếu thông tin ở một số vùng ảnh.
+
+Trong \textbf{Densely Semantically Aligned Person Re-Identification} \cite{zhang2019denselysemanticallyalignedperson}, tác giả đưa thông tin ngữ nghĩa vào quá trình căn chỉnh đặc trưng để giảm sai lệch do tư thế và góc nhìn. Hướng này đặc biệt hữu ích khi các phần cơ thể xuất hiện không đầy đủ giữa các camera.
+
+\textbf{TransReID: Transformer-based Object Re-Identification} \cite{he2021transreidtransformerbasedobjectreidentification} mở rộng hướng tiếp cận Transformer cho ReID, cho phép mô hình học quan hệ dài hạn giữa các vùng ảnh tốt hơn CNN truyền thống. Tuy nhiên, các mô hình Transformer thường yêu cầu tài nguyên huấn luyện lớn hơn và cần tinh chỉnh cẩn thận trên dữ liệu mục tiêu.
+
+\subsection{Hướng kết hợp thị giác-ngôn ngữ và tự giám sát}
+Hướng tiếp cận này tận dụng tín hiệu ngữ nghĩa và cơ chế học không cần gán nhãn đầy đủ để bổ sung cho đặc trưng thị giác truyền thống. Mục tiêu là tăng độ bền vững của mô hình trong các tình huống khó như che khuất, thay đổi ngoại hình hoặc khác biệt bối cảnh giữa các camera.
+
+\textbf{Beyond Appearance: a Semantic Controllable Self-Supervised Learning Framework for Human-Centric Visual Tasks} \cite{chen2023appearancesemanticcontrollableselfsupervised} cho thấy tiềm năng của việc dùng tín hiệu ngữ nghĩa để bổ sung cho đặc trưng ngoại hình thuần túy. Đây là hướng phù hợp để xử lý các trường hợp che khuất hoặc trang phục tương tự, khi chỉ dựa trên đặc trưng ngoại hình dễ gây nhầm lẫn.
+
+\subsection{Khoảng trống nghiên cứu và định hướng đề tài}
+Từ các nghiên cứu trên có thể rút ra ba nhận xét chính:
+\begin{itemize}
+    \item Các mô hình theo bộ phận cơ thể có tính phân biệt tốt, nhưng vẫn nhạy với sai lệch căn chỉnh và che khuất mạnh.
+    \item Các mô hình CNN đa tỉ lệ hoặc Transformer cải thiện biểu diễn đặc trưng, nhưng chi phí tính toán có thể cao khi triển khai thực tế.
+    \item Việc tích hợp đồng thời đặc trưng ngoại hình, tín hiệu ngữ nghĩa và metric learning vẫn là hướng tiềm năng để nâng cao hiệu quả nhận dạng.
+\end{itemize}
+
+Từ đó, đề tài lựa chọn \textbf{TransReID} \cite{he2021transreidtransformerbasedobjectreidentification} làm mô hình nền và đề xuất mở rộng theo hướng \textbf{visibility-guided patch weighting}. Cụ thể, một nhánh phụ sẽ ước lượng độ tin cậy của từng patch để ưu tiên vùng người nhìn thấy rõ và giảm ảnh hưởng của vùng che khuất hoặc nhiễu nền. Mô hình được huấn luyện bằng ID classification loss, batch hard triplet loss và visibility loss. Phần này sẽ được trình bày chi tiết ở mục Phương pháp đề xuất.
