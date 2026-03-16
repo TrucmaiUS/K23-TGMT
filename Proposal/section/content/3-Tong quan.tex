@@ -22,7 +22,7 @@ Trong \textbf{Densely Semantically Aligned Person Re-Identification} \cite{zhang
 
 \textbf{TransReID: Transformer-based Object Re-Identification} \cite{he2021transreidtransformerbasedobjectreidentification} mở rộng hướng tiếp cận Transformer cho ReID, cho phép mô hình học quan hệ dài hạn giữa các vùng ảnh tốt hơn CNN truyền thống. Tuy nhiên, các mô hình Transformer thường yêu cầu tài nguyên huấn luyện lớn hơn và cần tinh chỉnh cẩn thận trên dữ liệu mục tiêu.
 
-\subsection{Hướng kết hợp thị giác-ngôn ngữ và tự giám sát}
+\subsection{Hướng kết hợp Vision language và tự giám sát}
 Hướng tiếp cận này tận dụng tín hiệu ngữ nghĩa và cơ chế học không cần gán nhãn đầy đủ để bổ sung cho đặc trưng thị giác truyền thống. Mục tiêu là tăng độ bền vững của mô hình trong các tình huống khó như che khuất, thay đổi ngoại hình hoặc khác biệt bối cảnh giữa các camera.
 
 \textbf{Beyond Appearance: a Semantic Controllable Self-Supervised Learning Framework for Human-Centric Visual Tasks} \cite{chen2023appearancesemanticcontrollableselfsupervised} cho thấy tiềm năng của việc dùng tín hiệu ngữ nghĩa để bổ sung cho đặc trưng ngoại hình thuần túy. Đây là hướng phù hợp để xử lý các trường hợp che khuất hoặc trang phục tương tự, khi chỉ dựa trên đặc trưng ngoại hình dễ gây nhầm lẫn.
@@ -35,4 +35,4 @@ Từ các nghiên cứu trên có thể rút ra ba nhận xét chính:
     \item Việc tích hợp đồng thời đặc trưng ngoại hình, tín hiệu ngữ nghĩa và metric learning vẫn là hướng tiềm năng để nâng cao hiệu quả nhận dạng.
 \end{itemize}
 
-Từ đó, đề tài lựa chọn \textbf{TransReID} \cite{he2021transreidtransformerbasedobjectreidentification} làm mô hình nền và đề xuất mở rộng theo hướng \textbf{visibility-guided patch weighting}. Cụ thể, một nhánh phụ sẽ ước lượng độ tin cậy của từng patch để ưu tiên vùng người nhìn thấy rõ và giảm ảnh hưởng của vùng che khuất hoặc nhiễu nền. Mô hình được huấn luyện bằng ID classification loss, batch hard triplet loss và visibility loss. Phần này sẽ được trình bày chi tiết ở mục Phương pháp đề xuất.
+Từ đó, đề tài lựa chọn \textbf{TransReID} \cite{he2021transreidtransformerbasedobjectreidentification} làm mô hình nền và đề xuất mở rộng theo hướng \textbf{visibility-guided patch weighting}. Cụ thể, một nhánh phụ sẽ ước lượng độ tin cậy của từng patch để ưu tiên vùng người nhìn thấy rõ và giảm ảnh hưởng của vùng che khuất hoặc nhiễu nền. Mô hình được huấn luyện bằng ID classification loss, batch hard triplet loss và regularization loss. Phần này sẽ được trình bày chi tiết ở mục Phương pháp đề xuất.
