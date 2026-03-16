@@ -9,9 +9,18 @@
 \usepackage[top=.5in, left=.5in, right=.5in, bottom=1in]{geometry}
 \usepackage[utf8]{vietnam}
 \usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{caption}
 
 \titlespacing*{\section}{0pt}{16pt}{4pt}
-\titlespacing*{\subsection}{0pt}{4pt}{2pt}
+\titlespacing*{\subsection}{0pt}{10pt}{2pt}
+
+\setstretch{0.5}
+
+\setlist[itemize]{itemsep=0pt, topsep=0pt}
+\setlist[enumerate]{itemsep=0pt, topsep=0pt}
+
+\setlength{\belowcaptionskip}{-15pt}
 
 % For algorithm
 \usepackage{algorithm}
@@ -50,6 +59,7 @@
 % ============ HEADER AND FOOTER ============
 % Header length
 \setlength{\headheight}{27.43912pt}
+\setlength{\headsep}{15pt}
 
 % Footer page number would be on the lower-right corner
 \pagestyle{fancy}
