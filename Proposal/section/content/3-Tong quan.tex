@@ -8,7 +8,7 @@ Các phương pháp theo bộ phận cơ thể chia ảnh người thành nhiề
 
 Trong \textbf{Beyond Part Models: Person Retrieval with Refined Part Pooling (and a Strong Convolutional Baseline)} \cite{sun2018modelspersonretrievalrefined}, tác giả đề xuất biểu diễn người bằng nhiều vector đặc trưng theo từng phần cơ thể, sau đó tinh chỉnh quá trình gộp đặc trưng để tăng tính ổn định. Một hướng mở rộng quan trọng là kết hợp Part-based Convolutional Baseline/Refined Part Pooling với metric learning bên cạnh phân loại ID bằng Softmax, giúp cải thiện chất lượng truy hồi trong các trường hợp mẫu âm khó.
 
-Ngoài ra, \textbf{Learning Diverse Features with Part-Level Resolution for Person Re-Identification} \cite{xie2020learningdiversefeaturespartlevel} cho thấy việc học đa dạng đặc trưng ở mức phần cơ thể có thể tăng độ bền vững khi một số vùng bị nhiễu hoặc che khuất.
+Ngoài ra, \textbf{Learning Diverse Features with Part-Level Resolution for Person Re-Identification} \cite{xie2020learningdiversefeaturespartlevel} cho thấy việc học đa dạng đặc trưng ở các phần cơ thể có thể tăng độ bền vững khi một số vùng bị nhiễu hoặc che khuất.
 
 \subsection{Nhóm CNN đa nhánh và đa tỉ lệ}
 Nhóm này khai thác thông tin ở nhiều mức hạt khác nhau để cân bằng giữa đặc trưng toàn cục và cục bộ. \textbf{Learning Discriminative Features with Multiple Granularities for Person Re-Identification} \cite{Wang_2018} sử dụng nhiều nhánh song song để trích xuất đặc trưng ở các độ phân giải khác nhau, nhờ đó tăng độ phân biệt cho bài toán xếp hạng.
