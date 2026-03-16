@@ -1,55 +1,57 @@
 \section{Giới thiệu}
+
+\subsection{Tóm tắt đề tài}
+Đề tài tập trung nghiên cứu bài toán \textbf{Person Re-identification (ReID)} trong lĩnh vực Thị giác máy tính, với mục tiêu nhận dạng lại một người qua nhiều camera khác nhau. Trên cơ sở khảo sát các nghiên cứu liên quan, đề tài hướng đến việc đề xuất một mô hình dựa trên học sâu, thực nghiệm trên tập dữ liệu chuẩn và đánh giá hiệu quả bằng các độ đo phổ biến. Bên cạnh đó, đề tài cũng xem xét một số hướng cải tiến nhằm nâng cao hiệu quả nhận dạng.
+
 \subsection{Bối cảnh bài toán}
+Cùng với sự phát triển của các hệ thống giám sát thông minh, bài toán nhận dạng con người qua nhiều camera ngày càng nhận được nhiều sự quan tâm trong lĩnh vực Thị giác máy tính. Trong các môi trường như sân bay, nhà ga, trung tâm thương mại hay khu vực công cộng, một người có thể xuất hiện ở nhiều camera khác nhau với các điều kiện quan sát không đồng nhất. Do đó, việc xác định các hình ảnh thu được từ nhiều camera có thuộc cùng một người hay không là một bài toán có ý nghĩa thực tiễn cao.
 
-% bài toán person re-identification là gì?
+Bài toán này được gọi là \textbf{Person Re-identification (ReID)}. Mục tiêu của Person ReID là tìm kiếm hoặc xác định lại một người trong tập ảnh hoặc video được thu thập từ nhiều camera khác nhau. Đây là một hướng nghiên cứu quan trọng, có nhiều ứng dụng trong giám sát an ninh, phân tích hành vi và quản lý di chuyển trong không gian công cộng.
 
+Tuy nhiên, Person Re-identification là một bài toán khó do sự thay đổi lớn về góc nhìn, ánh sáng, tư thế, độ phân giải ảnh và hiện tượng che khuất giữa các camera. Bên cạnh đó, sự tương đồng về trang phục hoặc ngoại hình giữa nhiều người khác nhau cũng làm gia tăng khả năng nhầm lẫn.
 
-\subsection{Thách thức của bài toán}
-Person ReID là một bài toán khó trong thị giác máy tính do:
-\begin{enumerate}
-    \item \textbf{Thay đổi góc nhìn (viewpoint variation)} Một người có thể được chụp từ nhiều góc khác nhau.
-    \item \textbf{Thay đổi ánh sáng (illumination variation)}
-    \item \textbf{Che khuất (occlusion)} Người có thể bị che bởi vật thể khác.
-    \item \textbf{Thay đổi tư thế (pose variation)}
-    \item \textbf{Trang phục giống nhau giữa nhiều người}
-\end{enumerate}
-Những yếu tố này khiến việc nhận dạng trở nên phức tạp.
+\subsection{Vấn đề nghiên cứu}
+Trong những năm gần đây, các phương pháp học sâu đã cho thấy hiệu quả nổi bật trong bài toán Person Re-identification nhờ khả năng học đặc trưng trực tiếp từ dữ liệu. Tuy vậy, hiệu quả của mô hình vẫn chịu ảnh hưởng bởi sự đa dạng của dữ liệu, khả năng biểu diễn đặc trưng và cách đo lường độ tương đồng giữa các đối tượng.
 
-\subsection{Động lực nghiên cứu}
-Trước hết, em xin gửi lời cảm ơn chân thành đến các giảng viên phụ trách môn Thị giác máy tính (TGMT) gồm TS. Võ Hoài Việt, ThS. Phạm Thanh Tùng và NCS, ThS. Phạm Minh Hoàng. Trong suốt quá trình học tập, các thầy đã tận tình giảng dạy, cung cấp những kiến thức nền tảng cũng như các phương pháp tiếp cận hiện đại trong lĩnh vực thị giác máy tính. Những hướng dẫn, góp ý và hỗ trợ của các thầy đã giúp em hiểu rõ hơn về nội dung môn học cũng như hoàn thành bài báo cáo này.
-
-Em xin chân thành cảm ơn các thầy vì sự tận tâm trong giảng dạy và những kiến thức quý báu mà các thầy đã truyền đạt.
-
-\subsection{Câu hỏi nghiên cứu}
-
-
+Từ đó, đề tài đặt ra các vấn đề chính cần xem xét: các hướng tiếp cận hiện có giải quyết bài toán này như thế nào, mô hình nào phù hợp để áp dụng trong phạm vi đồ án, và những cải tiến nào có thể giúp nâng cao hiệu quả nhận dạng khi thực nghiệm trên tập dữ liệu chuẩn.
 
 \section{Mục tiêu nghiên cứu}
+
 \subsection{Mục tiêu chính}
+Mục tiêu chính của đề tài là nghiên cứu bài toán \textbf{Person Re-identification}, khảo sát các phương pháp tiêu biểu, từ đó đề xuất một mô hình dựa trên học sâu nhằm nhận dạng lại con người trong hệ thống nhiều camera, đồng thời thực nghiệm và đánh giá hiệu quả của mô hình trên tập dữ liệu chuẩn.
 
 \subsection{Các mục tiêu cụ thể}
+Để đạt được mục tiêu trên, đề tài tập trung vào các mục tiêu cụ thể sau:
+\begin{itemize}
+    \item Khảo sát bài toán Person Re-identification và các thách thức đặc trưng trong môi trường nhiều camera.
+    \item Tổng hợp, phân tích các nghiên cứu và phương pháp tiêu biểu liên quan đến bài toán, đặc biệt là các hướng tiếp cận dựa trên học sâu.
+    \item Đề xuất một mô hình phù hợp để giải quyết bài toán Person Re-identification.
+    \item Thực nghiệm mô hình đề xuất trên ít nhất một tập dữ liệu chuẩn và đánh giá kết quả bằng các độ đo phổ biến.
+    \item Phân tích kết quả thực nghiệm, chỉ ra ưu điểm và hạn chế của mô hình.
+    \item Xem xét một số hướng cải tiến nhằm nâng cao hiệu quả nhận dạng.
+\end{itemize}
 
 \section{Tổng quan nghiên cứu}
 \subsection{Phương pháp truyền thống}
-
 \subsection{Phương pháp Deep Learning}
-
 \subsection{Các hướng nghiên cứu hiện đại}
 \subsubsection*{Part-based methods}
-
-\subsubsection*{Multi-branch networks - Mạng đa nhánh}
-
+\subsubsection*{Multi-branch networks}
 \subsubsection*{Omni-scale networks}
-
 \subsubsection*{Transformer-based ReID}
+
+\section{Đóng góp kỳ vọng}
+Đề tài kỳ vọng đóng góp ở ba khía cạnh chính. Thứ nhất, cung cấp một cái nhìn tổng quan có hệ thống về bài toán Person Re-identification và các hướng tiếp cận tiêu biểu. Thứ hai, xây dựng và thực nghiệm một mô hình dựa trên học sâu cho bài toán nhận dạng người qua nhiều camera. Thứ ba, phân tích kết quả thực nghiệm và đề xuất một số hướng cải tiến nhằm nâng cao hiệu quả mô hình trong phạm vi đồ án.
 
 \section{Phương pháp đề xuất}
 \subsection{Pipeline}
-
 \subsection{Trích xuất đặc trưng}
+\subsection{Hàm mất mát}
+\subsection{Tập dữ liệu}
+\subsection{Phương pháp đánh giá}
 
-\subsection{Metric Learning - Hàm mất mát}
+\section{Kế hoạch thực hiện}
 
-\subsection{Dataset}
+\section{Nguồn lực}
 
-\subsection{Phương pháp đánh giá (metrics)}
+\section{Tài liệu tham khảo}
