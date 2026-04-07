@@ -3,10 +3,80 @@ import os
 import time
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from utils.meter import AverageMeter
 from utils.metrics import R1_mAP_eval
 from torch.cuda import amp
 import torch.distributed as dist
+
+
+def extract_global_feature(outputs):
+    if isinstance(outputs, dict):
+        if outputs.get("global_bn_feat") is not None:
+            return outputs["global_bn_feat"]
+        return outputs["global_feat"]
+
+    _, feat = outputs
+    if isinstance(feat, list):
+        return feat[0]
+    return feat
+
+
+def apply_synthetic_occlusion(images, cfg):
+    occluded_images = images.clone()
+    batch_size, _, height, width = images.shape
+    if batch_size == 0:
+        return occluded_images
+
+    fill_values = images.mean(dim=(2, 3), keepdim=True)
+    source_indices = torch.randperm(batch_size, device=images.device) if batch_size > 1 else None
+
+    for batch_index in range(batch_size):
+        if torch.rand(1, device=images.device).item() > cfg.MODEL.OCC_AUG.PROB:
+            continue
+
+        target_area = torch.empty(1, device=images.device).uniform_(
+            cfg.MODEL.OCC_AUG.MIN_AREA,
+            cfg.MODEL.OCC_AUG.MAX_AREA
+        ).item() * height * width
+        aspect_ratio = torch.empty(1, device=images.device).uniform_(
+            cfg.MODEL.OCC_AUG.MIN_ASPECT,
+            cfg.MODEL.OCC_AUG.MAX_ASPECT
+        ).item()
+
+        occ_height = max(1, min(height, int(round((target_area * aspect_ratio) ** 0.5))))
+        occ_width = max(1, min(width, int(round((target_area / max(aspect_ratio, 1e-6)) ** 0.5))))
+        top = torch.randint(0, height - occ_height + 1, (1,), device=images.device).item()
+        left = torch.randint(0, width - occ_width + 1, (1,), device=images.device).item()
+
+        if cfg.MODEL.OCC_AUG.INTER_PERSON and batch_size > 1:
+            source_index = source_indices[batch_index].item()
+            if source_index == batch_index:
+                source_index = (source_index + 1) % batch_size
+            source_top = torch.randint(0, height - occ_height + 1, (1,), device=images.device).item()
+            source_left = torch.randint(0, width - occ_width + 1, (1,), device=images.device).item()
+            occluded_images[batch_index, :, top:top + occ_height, left:left + occ_width] = (
+                images[source_index, :, source_top:source_top + occ_height, source_left:source_left + occ_width]
+            )
+        else:
+            occluded_images[batch_index, :, top:top + occ_height, left:left + occ_width] = fill_values[batch_index]
+
+    return occluded_images
+
+
+def run_validation(model, val_loader, evaluator, device):
+    evaluator.reset()
+    model.eval()
+
+    for _, (img, vid, camid, camids, target_view, _) in enumerate(val_loader):
+        with torch.no_grad():
+            img = img.to(device)
+            camids = camids.to(device)
+            target_view = target_view.to(device)
+            feat = model(img, cam_label=camids, view_label=target_view)
+            evaluator.update((feat, vid, camid))
+
+    return evaluator.compute()
 
 def do_train(cfg,
              model,
@@ -22,14 +92,14 @@ def do_train(cfg,
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
     eval_period = cfg.SOLVER.EVAL_PERIOD
 
-    device = "cuda"
+    device = torch.device("cuda", local_rank) if torch.cuda.is_available() else torch.device("cpu")
     epochs = cfg.SOLVER.MAX_EPOCHS
 
     logger = logging.getLogger("transreid.train")
     logger.info('start training')
     _LOCAL_PROCESS_GROUP = None
-    if device:
-        model.to(local_rank)
+    model.to(device)
+    if device.type == "cuda":
         if torch.cuda.device_count() > 1 and cfg.MODEL.DIST_TRAIN:
             print('Using {} GPUs for training'.format(torch.cuda.device_count()))
             model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], find_unused_parameters=True)
@@ -38,7 +108,18 @@ def do_train(cfg,
     acc_meter = AverageMeter()
 
     evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
-    scaler = amp.GradScaler()
+    scaler = amp.GradScaler(enabled=device.type == "cuda")
+    best_mAP = -1.0
+
+    def maybe_save_best(current_mAP):
+        nonlocal best_mAP
+        if not cfg.TEST.SAVE_BEST:
+            return
+        if current_mAP <= best_mAP:
+            return
+        best_mAP = current_mAP
+        model_state = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
+        torch.save(model_state, os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_best.pth'))
     # train
     for epoch in range(1, epochs + 1):
         start_time = time.time()
@@ -54,9 +135,21 @@ def do_train(cfg,
             target = vid.to(device)
             target_cam = target_cam.to(device)
             target_view = target_view.to(device)
-            with amp.autocast(enabled=True):
+            with amp.autocast(enabled=device.type == "cuda"):
                 outputs = model(img, target, cam_label=target_cam, view_label=target_view, epoch=epoch)
                 loss = loss_fn(outputs, target, target_cam)
+
+                if cfg.MODEL.OCC_AUG.ENABLED and epoch >= cfg.MODEL.OCC_AUG.START_EPOCH:
+                    occ_img = apply_synthetic_occlusion(img, cfg)
+                    occ_outputs = model(occ_img, target, cam_label=target_cam, view_label=target_view, epoch=epoch)
+                    occ_loss = loss_fn(occ_outputs, target, target_cam)
+                    consistency_loss = 1.0 - F.cosine_similarity(
+                        extract_global_feature(outputs),
+                        extract_global_feature(occ_outputs),
+                        dim=1
+                    ).mean()
+                    loss = loss + cfg.MODEL.OCC_AUG.OCC_LOSS_WEIGHT * occ_loss + \
+                           cfg.MODEL.OCC_AUG.CONSISTENCY_WEIGHT * consistency_loss
 
             scaler.scale(loss).backward()
 
@@ -78,7 +171,8 @@ def do_train(cfg,
             loss_meter.update(loss.item(), img.shape[0])
             acc_meter.update(acc, 1)
 
-            torch.cuda.synchronize()
+            if device.type == "cuda":
+                torch.cuda.synchronize()
             if (n_iter + 1) % log_period == 0:
                 logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Acc: {:.3f}, Base Lr: {:.2e}"
                             .format(epoch, (n_iter + 1), len(train_loader),
@@ -92,7 +186,7 @@ def do_train(cfg,
             logger.info("Epoch {} done. Time per batch: {:.3f}[s] Speed: {:.1f}[samples/s]"
                     .format(epoch, time_per_batch, train_loader.batch_size / time_per_batch))
 
-        if epoch % checkpoint_period == 0:
+        if checkpoint_period > 0 and (epoch % checkpoint_period == 0 or epoch == epochs):
             if cfg.MODEL.DIST_TRAIN:
                 if dist.get_rank() == 0:
                     torch.save(model.state_dict(),
@@ -101,45 +195,32 @@ def do_train(cfg,
                 torch.save(model.state_dict(),
                            os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
 
-        if epoch % eval_period == 0:
+        if eval_period > 0 and (epoch % eval_period == 0 or epoch == epochs):
             if cfg.MODEL.DIST_TRAIN:
                 if dist.get_rank() == 0:
-                    model.eval()
-                    for n_iter, (img, vid, camid, camids, target_view, _) in enumerate(val_loader):
-                        with torch.no_grad():
-                            img = img.to(device)
-                            camids = camids.to(device)
-                            target_view = target_view.to(device)
-                            feat = model(img, cam_label=camids, view_label=target_view)
-                            evaluator.update((feat, vid, camid))
-                    cmc, mAP, _, _, _, _, _ = evaluator.compute()
+                    cmc, mAP, _, _, _, _, _ = run_validation(model, val_loader, evaluator, device)
                     logger.info("Validation Results - Epoch: {}".format(epoch))
                     logger.info("mAP: {:.1%}".format(mAP))
                     for r in [1, 5, 10]:
                         logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
+                    maybe_save_best(mAP)
                     torch.cuda.empty_cache()
             else:
-                model.eval()
-                for n_iter, (img, vid, camid, camids, target_view, _) in enumerate(val_loader):
-                    with torch.no_grad():
-                        img = img.to(device)
-                        camids = camids.to(device)
-                        target_view = target_view.to(device)
-                        feat = model(img, cam_label=camids, view_label=target_view)
-                        evaluator.update((feat, vid, camid))
-                cmc, mAP, _, _, _, _, _ = evaluator.compute()
+                cmc, mAP, _, _, _, _, _ = run_validation(model, val_loader, evaluator, device)
                 logger.info("Validation Results - Epoch: {}".format(epoch))
                 logger.info("mAP: {:.1%}".format(mAP))
                 for r in [1, 5, 10]:
                     logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
-                torch.cuda.empty_cache()
+                maybe_save_best(mAP)
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
 
 
 def do_inference(cfg,
                  model,
                  val_loader,
                  num_query):
-    device = "cuda"
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     logger = logging.getLogger("transreid.test")
     logger.info("Enter inferencing")
 
@@ -147,10 +228,12 @@ def do_inference(cfg,
 
     evaluator.reset()
 
-    if device:
+    if device.type == "cuda":
         if torch.cuda.device_count() > 1:
             print('Using {} GPUs for inference'.format(torch.cuda.device_count()))
             model = nn.DataParallel(model)
+        model.to(device)
+    else:
         model.to(device)
 
     model.eval()

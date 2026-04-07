@@ -47,6 +47,46 @@ def weights_init_classifier(m):
             nn.init.constant_(m.bias, 0.0)
 
 
+def enhance_patch_tokens(patch_tokens, patch_weights, topk_ratio, enrich_scale, eps, use_topk_only=False):
+    if patch_weights is None:
+        return {
+            "global_feat": None,
+            "enriched_patch_tokens": patch_tokens,
+            "visible_prototype": None,
+            "selection_mask": None,
+            "selected_indices": None,
+        }
+
+    patch_scores = patch_weights.squeeze(-1)
+    num_tokens = patch_tokens.size(1)
+    topk = max(1, min(num_tokens, int(round(num_tokens * topk_ratio))))
+    topk_scores, topk_indices = torch.topk(patch_scores, k=topk, dim=1, largest=True, sorted=False)
+    gather_index = topk_indices.unsqueeze(-1).expand(-1, -1, patch_tokens.size(-1))
+    topk_tokens = torch.gather(patch_tokens, 1, gather_index)
+    topk_attention = torch.softmax(topk_scores, dim=1).unsqueeze(-1)
+    visible_prototype = (topk_attention * topk_tokens).sum(dim=1)
+
+    enriched_patch_tokens = patch_tokens + enrich_scale * patch_weights * visible_prototype.unsqueeze(1)
+
+    selection_mask = torch.zeros_like(patch_scores)
+    selection_mask.scatter_(1, topk_indices, 1.0)
+
+    if use_topk_only:
+        normalized_weights = patch_weights * selection_mask.unsqueeze(-1)
+    else:
+        normalized_weights = patch_weights
+
+    global_feat = (normalized_weights * enriched_patch_tokens).sum(dim=1) / (normalized_weights.sum(dim=1) + eps)
+
+    return {
+        "global_feat": global_feat,
+        "enriched_patch_tokens": enriched_patch_tokens,
+        "visible_prototype": visible_prototype,
+        "selection_mask": selection_mask,
+        "selected_indices": topk_indices,
+    }
+
+
 class Backbone(nn.Module):
     def __init__(self, num_classes, cfg):
         super(Backbone, self).__init__()
@@ -126,11 +166,16 @@ class build_transformer(nn.Module):
         self.neck_feat = cfg.TEST.NECK_FEAT
         self.in_planes = 768
         self.enable_patch_weight = cfg.MODEL.VIS_WEIGHT.ENABLED
+        self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
         self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
-        self.token_branch_enabled = self.enable_patch_weight or self.enable_local_group
+        self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
         self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
+        self.topk_ratio = cfg.MODEL.TOKEN_ENRICH.TOPK_RATIO
+        self.enrich_scale = cfg.MODEL.TOKEN_ENRICH.ENRICH_SCALE
+        self.use_topk_only = cfg.MODEL.TOKEN_ENRICH.USE_TOPK_ONLY
 
         print('using Transformer_type: {} as a backbone'.format(cfg.MODEL.TRANSFORMER_TYPE))
 
@@ -180,7 +225,7 @@ class build_transformer(nn.Module):
         self.bottleneck.bias.requires_grad_(False)
         self.bottleneck.apply(weights_init_kaiming)
 
-        if self.enable_patch_weight:
+        if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
             self.patch_weight_head = nn.Sequential(
                 nn.Linear(self.in_planes, hidden_dim),
@@ -225,7 +270,7 @@ class build_transformer(nn.Module):
         return self.classifier(feat)
 
     def _get_patch_weights(self, patch_tokens, epoch):
-        if not self.enable_patch_weight:
+        if not self.use_patch_scorer:
             return None
 
         if self.training and epoch is not None and epoch <= self.patch_weight_warmup_epochs:
@@ -263,11 +308,27 @@ class build_transformer(nn.Module):
         patch_tokens = token_features[:, 1:]
         patch_weights = self._get_patch_weights(patch_tokens, epoch)
 
-        if patch_weights is not None:
-            weighted_tokens = patch_weights * patch_tokens
-            global_feat = weighted_tokens.sum(dim=1) / (patch_weights.sum(dim=1) + self.patch_weight_eps)
-        else:
+        patch_context = enhance_patch_tokens(
+            patch_tokens,
+            patch_weights,
+            topk_ratio=self.topk_ratio,
+            enrich_scale=self.enrich_scale if self.enable_token_enrich else 0.0,
+            eps=self.patch_weight_eps,
+            use_topk_only=self.use_topk_only,
+        )
+
+        if patch_context["global_feat"] is None:
             global_feat = cls_token
+            enriched_patch_tokens = patch_tokens
+            visible_prototype = None
+            selection_mask = None
+            selected_indices = None
+        else:
+            global_feat = patch_context["global_feat"]
+            enriched_patch_tokens = patch_context["enriched_patch_tokens"]
+            visible_prototype = patch_context["visible_prototype"]
+            selection_mask = patch_context["selection_mask"]
+            selected_indices = patch_context["selected_indices"]
 
         global_bn_feat = self.bottleneck(global_feat)
         local_feats = []
@@ -298,6 +359,10 @@ class build_transformer(nn.Module):
                 "local_logits": local_logits,
                 "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
                 "patch_tokens": patch_tokens,
+                "enriched_patch_tokens": enriched_patch_tokens,
+                "visible_prototype": visible_prototype,
+                "selection_mask": selection_mask,
+                "selected_indices": selected_indices,
             }
             return outputs
 
@@ -311,6 +376,10 @@ class build_transformer(nn.Module):
                 "local_bn_feats": local_bn_feats,
                 "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
                 "patch_tokens": patch_tokens,
+                "enriched_patch_tokens": enriched_patch_tokens,
+                "visible_prototype": visible_prototype,
+                "selection_mask": selection_mask,
+                "selected_indices": selected_indices,
             }
         return retrieval_feat
 
@@ -335,13 +404,19 @@ class build_transformer_local(nn.Module):
         self.cos_layer = cfg.MODEL.COS_LAYER
         self.neck = cfg.MODEL.NECK
         self.neck_feat = cfg.TEST.NECK_FEAT
+        self.use_jpm_infer_fusion = cfg.TEST.USE_JPM_FUSION
         self.in_planes = 768
         self.enable_patch_weight = cfg.MODEL.VIS_WEIGHT.ENABLED
+        self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
         self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
-        self.token_branch_enabled = self.enable_patch_weight or self.enable_local_group
+        self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
         self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
+        self.topk_ratio = cfg.MODEL.TOKEN_ENRICH.TOPK_RATIO
+        self.enrich_scale = cfg.MODEL.TOKEN_ENRICH.ENRICH_SCALE
+        self.use_topk_only = cfg.MODEL.TOKEN_ENRICH.USE_TOPK_ONLY
 
         print('using Transformer_type: {} as a backbone'.format(cfg.MODEL.TRANSFORMER_TYPE))
 
@@ -419,7 +494,7 @@ class build_transformer_local(nn.Module):
         self.bottleneck_4.bias.requires_grad_(False)
         self.bottleneck_4.apply(weights_init_kaiming)
 
-        if self.enable_patch_weight:
+        if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
             self.patch_weight_head = nn.Sequential(
                 nn.Linear(self.in_planes, hidden_dim),
@@ -467,7 +542,7 @@ class build_transformer_local(nn.Module):
         return classifier
 
     def _get_patch_weights(self, patch_tokens, epoch):
-        if not self.enable_patch_weight:
+        if not self.use_patch_scorer:
             return None
 
         if self.training and epoch is not None and epoch <= self.patch_weight_warmup_epochs:
@@ -493,13 +568,28 @@ class build_transformer_local(nn.Module):
 
         # global branch
         b1_feat = self.b1(features) # [64, 129, 768]
-        global_feat = b1_feat[:, 0]
         patch_tokens = b1_feat[:, 1:]
         patch_weights = self._get_patch_weights(patch_tokens, epoch)
-        if patch_weights is not None:
-            weighted_global_feat = (patch_weights * patch_tokens).sum(dim=1) / (patch_weights.sum(dim=1) + self.patch_weight_eps)
+        patch_context = enhance_patch_tokens(
+            patch_tokens,
+            patch_weights,
+            topk_ratio=self.topk_ratio,
+            enrich_scale=self.enrich_scale if self.enable_token_enrich else 0.0,
+            eps=self.patch_weight_eps,
+            use_topk_only=self.use_topk_only,
+        )
+        if patch_context["global_feat"] is None:
+            weighted_global_feat = b1_feat[:, 0]
+            enriched_patch_tokens = patch_tokens
+            visible_prototype = None
+            selection_mask = None
+            selected_indices = None
         else:
-            weighted_global_feat = global_feat
+            weighted_global_feat = patch_context["global_feat"]
+            enriched_patch_tokens = patch_context["enriched_patch_tokens"]
+            visible_prototype = patch_context["visible_prototype"]
+            selection_mask = patch_context["selection_mask"]
+            selected_indices = patch_context["selected_indices"]
 
         # JPM branch
         feature_length = features.size(1) - 1
@@ -579,6 +669,10 @@ class build_transformer_local(nn.Module):
                     "local_logits": local_group_logits,
                     "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
                     "patch_tokens": patch_tokens,
+                    "enriched_patch_tokens": enriched_patch_tokens,
+                    "visible_prototype": visible_prototype,
+                    "selection_mask": selection_mask,
+                    "selected_indices": selected_indices,
                     "base_scores": jpm_scores,
                     "base_feats": jpm_feats,
                     "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
@@ -588,16 +682,33 @@ class build_transformer_local(nn.Module):
             return jpm_scores, jpm_feats  # global feature for triplet loss
         else:
             if self.token_branch_enabled:
-                retrieval_feat = feat if self.neck_feat == 'after' else weighted_global_feat
+                if self.use_jpm_infer_fusion:
+                    if self.neck_feat == 'after':
+                        retrieval_feat = torch.cat(
+                            [feat, local_feat_1_bn / 4, local_feat_2_bn / 4, local_feat_3_bn / 4, local_feat_4_bn / 4],
+                            dim=1
+                        )
+                    else:
+                        retrieval_feat = torch.cat(
+                            [weighted_global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4],
+                            dim=1
+                        )
+                else:
+                    retrieval_feat = feat if self.neck_feat == 'after' else weighted_global_feat
                 if return_feature_dict:
                     return {
                         "retrieval_feat": retrieval_feat,
+                        "global_only_feat": feat if self.neck_feat == 'after' else weighted_global_feat,
                         "global_feat": weighted_global_feat,
                         "global_bn_feat": feat,
                         "local_feats": local_group_feats,
                         "local_bn_feats": local_group_bn_feats,
                         "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
                         "patch_tokens": patch_tokens,
+                        "enriched_patch_tokens": enriched_patch_tokens,
+                        "visible_prototype": visible_prototype,
+                        "selection_mask": selection_mask,
+                        "selected_indices": selected_indices,
                         "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
                         "jpm_local_bn_feats": [local_feat_1_bn, local_feat_2_bn, local_feat_3_bn, local_feat_4_bn],
                     }

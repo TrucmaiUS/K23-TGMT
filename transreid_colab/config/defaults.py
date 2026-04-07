@@ -67,6 +67,26 @@ _C.MODEL.VIS_WEIGHT.TARGET_MEAN = 0.5
 _C.MODEL.VIS_WEIGHT.ALPHA_REG = 1.0
 _C.MODEL.VIS_WEIGHT.BETA_REG = 1.0
 
+# Dynamic patch selection and enrichment
+_C.MODEL.TOKEN_ENRICH = CN()
+_C.MODEL.TOKEN_ENRICH.ENABLED = False
+_C.MODEL.TOKEN_ENRICH.TOPK_RATIO = 0.3
+_C.MODEL.TOKEN_ENRICH.ENRICH_SCALE = 0.5
+_C.MODEL.TOKEN_ENRICH.USE_TOPK_ONLY = False
+
+# Synthetic occlusion pair training
+_C.MODEL.OCC_AUG = CN()
+_C.MODEL.OCC_AUG.ENABLED = False
+_C.MODEL.OCC_AUG.START_EPOCH = 0
+_C.MODEL.OCC_AUG.PROB = 0.5
+_C.MODEL.OCC_AUG.MIN_AREA = 0.08
+_C.MODEL.OCC_AUG.MAX_AREA = 0.30
+_C.MODEL.OCC_AUG.MIN_ASPECT = 0.5
+_C.MODEL.OCC_AUG.MAX_ASPECT = 2.0
+_C.MODEL.OCC_AUG.INTER_PERSON = True
+_C.MODEL.OCC_AUG.OCC_LOSS_WEIGHT = 0.5
+_C.MODEL.OCC_AUG.CONSISTENCY_WEIGHT = 0.3
+
 # Local token grouping supervision
 _C.MODEL.LOCAL_GROUP = CN()
 _C.MODEL.LOCAL_GROUP.ENABLED = False
@@ -194,6 +214,8 @@ _C.TEST.WEIGHT = ""
 _C.TEST.NECK_FEAT = 'after'
 # Whether feature is nomalized before test, if yes, it is equivalent to cosine distance
 _C.TEST.FEAT_NORM = 'yes'
+_C.TEST.USE_JPM_FUSION = True
+_C.TEST.SAVE_BEST = True
 
 # Name for saving the distmat after testing.
 _C.TEST.DIST_MAT = "dist_mat.npy"
