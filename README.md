@@ -31,7 +31,7 @@ This repository contains a minimal IEEE paper template configured for the
 1. Open this folder in VS Code.
 2. Install the recommended extension `James-Yu LaTeX Workshop` if VS Code prompts you.
 3. Open `main.tex`.
-4. Save the file or run the recipe `xelatex -> bibtex -> xelatex x2` from LaTeX Workshop.
+4. Save the file or run the recipe `pdflatex -> bibtex -> pdflatex x2` from LaTeX Workshop.
 
 The generated PDF file is `main.pdf`.
 
@@ -43,4 +43,3 @@ The generated PDF file is `main.pdf`.
 - Put your images into `figures/` and include them with `\includegraphics`.
 - You can write Vietnamese directly in Unicode.
 - This project does not depend on `latexmk` or Perl.
-- A fallback recipe `pdflatex -> bibtex -> pdflatex x2` is also available.

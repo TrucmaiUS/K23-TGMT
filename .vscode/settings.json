@@ -1,21 +1,11 @@
 {
   "latex-workshop.latex.autoBuild.run": "onSave",
-  "latex-workshop.latex.recipe.default": "first",
+  "latex-workshop.latex.recipe.default": "pdflatex -> bibtex -> pdflatex x2",
   "latex-workshop.latex.outDir": "%DIR%",
   "latex-workshop.view.pdf.viewer": "tab",
   "latex-workshop.message.update.show": false,
   "latex-workshop.latex.clean.method": "glob",
   "latex-workshop.latex.tools": [
-    {
-      "name": "xelatex",
-      "command": "xelatex",
-      "args": [
-        "-synctex=1",
-        "-interaction=nonstopmode",
-        "-file-line-error",
-        "%DOC%"
-      ]
-    },
     {
       "name": "pdflatex",
       "command": "pdflatex",
@@ -35,15 +25,6 @@
     }
   ],
   "latex-workshop.latex.recipes": [
-    {
-      "name": "xelatex -> bibtex -> xelatex x2",
-      "tools": [
-        "xelatex",
-        "bibtex",
-        "xelatex",
-        "xelatex"
-      ]
-    },
     {
       "name": "pdflatex -> bibtex -> pdflatex x2",
       "tools": [
