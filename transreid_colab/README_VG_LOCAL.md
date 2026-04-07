@@ -36,6 +36,12 @@ Train the full model:
 bash tools/colab_train_market_vg_occ.sh
 ```
 
+Resume from an existing checkpoint and continue to a later epoch:
+
+```bash
+bash tools/colab_resume_market_vg_occ.sh 120 150
+```
+
 Or run directly:
 
 ```bash
@@ -79,5 +85,6 @@ python train.py --config_file configs/Market/vit_transreid_stride.yml MODEL.PRET
 - With `STRIDE_SIZE [12,12]` and input `256x128`, the patch grid is `21x10`.
 - Validation frequency is controlled by `SOLVER.EVAL_PERIOD`. Current config runs validation every 10 epochs.
 - You can override validation frequency from Colab, for example: `bash tools/colab_train_market_vg_occ.sh SOLVER.EVAL_PERIOD 5`
+- You can also override it while resuming, for example: `bash tools/colab_resume_market_vg_occ.sh 120 150 SOLVER.EVAL_PERIOD 5 SOLVER.CHECKPOINT_PERIOD 5`
 - Best validation checkpoint is saved automatically as `transformer_best.pth`.
 - The train/test scripts in `tools/` override only environment-specific paths for Colab and keep the rest of the original config intact.

@@ -66,6 +66,9 @@ if __name__ == '__main__':
     train_loader, train_loader_normal, val_loader, num_query, num_classes, camera_num, view_num = make_dataloader(cfg)
 
     model = make_model(cfg, num_class=num_classes, camera_num=camera_num, view_num = view_num)
+    if cfg.MODEL.PRETRAIN_CHOICE in ('self', 'finetune') and cfg.MODEL.PRETRAIN_PATH:
+        model.load_param(cfg.MODEL.PRETRAIN_PATH)
+        logger.info("Loading training checkpoint from {}".format(cfg.MODEL.PRETRAIN_PATH))
 
     loss_func, center_criterion = make_loss(cfg, num_classes=num_classes)
 

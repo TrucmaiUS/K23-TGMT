@@ -94,6 +94,7 @@ def do_train(cfg,
 
     device = torch.device("cuda", local_rank) if torch.cuda.is_available() else torch.device("cpu")
     epochs = cfg.SOLVER.MAX_EPOCHS
+    start_epoch = cfg.SOLVER.START_EPOCH
 
     logger = logging.getLogger("transreid.train")
     logger.info('start training')
@@ -121,7 +122,7 @@ def do_train(cfg,
         model_state = model.module.state_dict() if hasattr(model, "module") else model.state_dict()
         torch.save(model_state, os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_best.pth'))
     # train
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch + 1, epochs + 1):
         start_time = time.time()
         loss_meter.reset()
         acc_meter.reset()
