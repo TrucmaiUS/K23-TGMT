@@ -63,10 +63,8 @@ L_{tri} = \max \left(0, d(f_a,f_p) - d(f_a,f_n) + m \right)
 trong đó \(d(\cdot,\cdot)\) là khoảng cách Euclid và \(m\) là margin. Hàm mất mát này giúp kéo đặc trưng của cùng một người lại gần nhau và đẩy đặc trưng của những người khác ra xa, từ đó cải thiện chất lượng xếp hạng trong truy hồi.
 
 \paragraph{Regularization cho patch weights} Do các trọng số patch được học trực tiếp từ đặc trưng, cần có một cơ chế điều chuẩn để tránh hiện tượng tất cả các patch nhận trọng số gần như nhau hoặc mô hình chỉ tập trung vào rất ít patch. Vì vậy, có thể bổ sung một thành phần điều chuẩn \(L_{reg}\) nhằm ổn định quá trình học trọng số và giữ cho cơ chế weighting hoạt động hiệu quả.
-
-Tổng hàm mất mát của mô hình được xác định như sau:
-\[
-L = L_{id} + \lambda_1 L_{tri} + \lambda_2 L_{reg}
+_{idh học trọng số và giữ cho cơ chế weighting hoạt động hiệu quả.
+} + \lambda_1 L_{tri} + \lambda_2 L_{reg}
 \]
 trong đó \(\lambda_1\) và \(\lambda_2\) là các hệ số cân bằng giữa các thành phần mất mát.
 

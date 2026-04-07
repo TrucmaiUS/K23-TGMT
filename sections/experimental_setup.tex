@@ -3,15 +3,38 @@
 % IV. THIET LAP THUC NGHIEM
 % ====================
 \section{Thiết lập thực nghiệm}
-Trình bày cách thiết kế và tổ chức thực nghiệm.
 
-\subsection{Dữ liệu}
-Mô tả bộ dữ liệu, số lượng mẫu, số lớp, cách chia train/validation/test và các
-bước tiền xử lý.
+\subsection{Datasets and Evaluation Protocol}
 
-\subsection{Chỉ số đánh giá}
-Nêu rõ các chỉ số được dùng để đánh giá mô hình.
+Các thí nghiệm trong nghiên cứu này được xây dựng trên bài toán \textit{person re-identification}, với nền tảng là TransReID và các biến thể mở rộng của cơ chế \textit{visibility-guided patch weighting}. Theo định hướng ban đầu của đề tài, hai bộ dữ liệu chuẩn trong lĩnh vực ReID được xem xét là \textbf{Market-1501}~\cite{zheng2015market1501} và \textbf{DukeMTMC-reID}~\cite{gou2017dukemtmc4reid}. Tuy nhiên, phần lớn các kiểm chứng thực nghiệm được thực hiện trên \textbf{Market-1501}, và đây cũng là tập dữ liệu chính được sử dụng để so sánh giữa baseline và các biến thể đề xuất.
 
-\subsection{Chi tiết cài đặt}
-Mô tả cấu hình phần cứng, phần mềm, siêu tham số, số epoch, learning rate,
-batch size và các thông tin cần thiết để tái lập kết quả.
+Market-1501 gồm hơn 32{,}000 ảnh của 1{,}501 danh tính, được thu thập từ 6 camera. Thiết lập đánh giá tuân theo giao thức chuẩn của bài toán ReID, trong đó tập dữ liệu được chia thành ba phần: tập huấn luyện, tập truy vấn (\textit{query}) và tập thư viện (\textit{gallery}). Trong các log huấn luyện đã lưu, phần thống kê dữ liệu của Market-1501 được ghi nhận nhất quán với 751 danh tính trong tập huấn luyện, 750 danh tính trong tập truy vấn và 751 danh tính trong tập thư viện. DukeMTMC-reID được giữ như một benchmark chuẩn để tham chiếu về mặt học thuật và có thể được dùng cho mở rộng trong các bước tiếp theo, nhưng không phải là tập dữ liệu trung tâm của chuỗi thực nghiệm hiện tại.
+
+\subsection{Evaluation Metrics}
+
+Hiệu năng mô hình được đánh giá bằng hai nhóm chỉ số chuẩn của bài toán person ReID, bao gồm \textbf{CMC} và \textbf{mAP}. Trong đó, CMC được báo cáo tại các mức \textbf{Rank-1}, \textbf{Rank-5} và \textbf{Rank-10}, phản ánh khả năng mẫu đúng xuất hiện trong top-\(k\) kết quả truy hồi. Chỉ số \textbf{mean Average Precision (mAP)} được sử dụng để đo chất lượng xếp hạng tổng thể và là thước đo chính để so sánh giữa các biến thể kiến trúc.
+
+Trong toàn bộ chuỗi thí nghiệm, mAP được ưu tiên như chỉ số trung tâm để đánh giá đóng góp của proposal, bởi cơ chế weighting/fusion/filtering tác động trực tiếp đến chất lượng biểu diễn và thứ tự truy hồi, thay vì chỉ ảnh hưởng đến độ chính xác top-1.
+
+\subsection{Implementation Details}
+
+Tất cả các thí nghiệm được xây dựng trên nền \textbf{TransReID} với backbone Transformer dạng ViT, sử dụng cấu hình stride phù hợp cho bài toán ReID. Trong các cấu hình chính được ghi nhận trong log huấn luyện, ảnh đầu vào được chuẩn hóa và sử dụng kích thước \(256 \times 128\) cho cả huấn luyện và đánh giá. Bộ tối ưu được dùng trong các thí nghiệm chính là \textbf{SGD}, với mini-batch toàn cục gồm 64 ảnh, cơ chế warm-up tuyến tính, đánh giá định kỳ sau mỗi 20 epoch và lưu checkpoint định kỳ theo cùng chu kỳ này.
+
+Một điểm cần nhấn mạnh là nghiên cứu sử dụng hai chế độ khởi tạo khác nhau, và việc phân biệt rõ hai chế độ này là bắt buộc khi diễn giải kết quả:
+
+\begin{enumerate}
+    \item \textbf{Fine-tune từ checkpoint ReID mạnh} \texttt{vit\_transreid\_market.pth}. Trong chế độ này, mô hình đã được khởi tạo từ một checkpoint TransReID đã học trên Market-1501, do đó phản ánh khả năng tích hợp proposal trên nền một biểu diễn ReID mạnh.
+    \item \textbf{Huấn luyện lại từ pretrained ImageNet} \texttt{jx\_vit\_base\_p16\_224-80ecf9dd.pth}. Trong chế độ này, mô hình chỉ được khởi tạo từ tri thức ảnh tổng quát, chưa có tri thức ReID đặc thù, vì vậy kết quả phản ánh công bằng hơn năng lực nội tại của kiến trúc đề xuất nhưng cũng khó tối ưu hơn đáng kể.
+\end{enumerate}
+
+Về thực chất, các kết quả trong hai chế độ trên không nên được diễn giải như tương đương nhau. Các kết quả fine-tune có ý nghĩa trong việc đánh giá tính tương thích của proposal với baseline mạnh, trong khi các kết quả khởi tạo từ ImageNet có giá trị cao hơn về mặt phương pháp luận khi xem xét đóng góp riêng của kiến trúc đề xuất.
+
+% TODO: Bổ sung thông tin phần cứng và phiên bản môi trường (GPU, CUDA, PyTorch, Colab/runtime) nếu muốn tăng khả năng tái lập tuyệt đối.
+
+\subsection{Experimental Settings and Compared Variants}
+
+Các biến thể được khảo sát trong nghiên cứu đều xuất phát từ cùng một baseline là \textbf{TransReID}, sau đó thay đổi cách tích hợp thông tin patch-level vào đặc trưng cuối cùng. Cấu hình \textbf{V1} kiểm tra hướng thay thế trực tiếp đặc trưng toàn cục bằng weighted patch feature. Cấu hình \textbf{V2} chuyển sang cơ chế \textit{global fusion}, trong đó đặc trưng global gốc được giữ lại và kết hợp với weighted patch feature theo hệ số trộn cố định. Cấu hình \textbf{V3} đóng vai trò ablation gần với baseline hơn bằng cách đặt hệ số fusion ở mức khiến nhánh weighted không còn tham gia trực tiếp vào biểu diễn cuối.
+
+Tiếp theo, nghiên cứu khảo sát các biến thể đưa weighting xuống mức cục bộ hơn, bao gồm \textbf{VG-JPM} trên các nhánh local của JPM, cũng như biến thể \textbf{foreground-aware top-k filtering}, trong đó chỉ các patch có điểm foreground cao nhất mới được ưu tiên giữ lại. Cuối cùng, để phù hợp hơn với điều kiện huấn luyện từ pretrained ImageNet, biến thể \textbf{residual visibility-guided fusion} được xây dựng nhằm giới hạn tác động ban đầu của proposal và cho phép nhánh mới hoạt động như một hiệu chỉnh residual có kiểm soát.
+
+Như vậy, mục tiêu của chuỗi thực nghiệm không chỉ là so sánh các con số cuối cùng, mà còn là xác định dạng tích hợp nào giữa proposal và baseline là hợp lý nhất: thay thế trực tiếp, fusion ở mức toàn cục, weighting ở mức local, foreground filtering, hay residual correction trong setting khởi tạo từ ImageNet. Phần tiếp theo sẽ trình bày kết quả định lượng và phân tích cụ thể đối với từng nhóm cấu hình này.

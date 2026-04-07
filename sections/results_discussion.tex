@@ -2,17 +2,14 @@
 % ====================
 % V. KET QUA VA THAO LUAN
 % ====================
-\section{Kết quả và thảo luận}
-Trình bày kết quả định lượng, định tính và đưa ra phân tích, nhận xét.
-
-\subsection{Kết quả chính}
-Báo cáo kết quả so sánh chính với các mô hình nền.
-
-\subsection{Thực nghiệm thành phần}
-Bổ sung thực nghiệm ablation nếu phù hợp.
-
-\subsection{Thảo luận}
-Phân tích vì sao phương pháp hoạt động tốt, trường hợp nào còn thất bại và
-những hạn chế còn tồn tại.
-
 \input{drafts/experimental_improved_model_train.tex}
+
+Kết quả thực nghiệm gợi ra ba nhận định chính. Thứ nhất, hiệu quả của proposal phụ thuộc mạnh vào cách tích hợp. Khi proposal được phép tác động quá trực tiếp lên biểu diễn cuối, mô hình mất đi lợi thế của đặc trưng global vốn đã rất mạnh trong TransReID. Ngược lại, khi proposal chỉ đóng vai trò tín hiệu phụ hoặc hiệu chỉnh residual, hiệu năng trở nên ổn định hơn đáng kể.
+
+Thứ hai, nguồn khởi tạo có ảnh hưởng rất lớn đến cách diễn giải kết quả. Trong setting fine-tune từ \texttt{vit\_transreid\_market.pth}, hiệu năng rất cao có thể đạt được ngay cả khi tác động của weighting lên đặc trưng cuối là rất nhỏ. Vì vậy, các kết quả của V2, V3, V4 và V5/V6 nên được đọc chủ yếu như bằng chứng về mức độ tương thích giữa proposal và baseline. Trái lại, setting ImageNet-pretrained khó hơn nhưng phản ánh công bằng hơn năng lực nội tại của proposal, và ở setting này residual fusion tỏ ra là lựa chọn hợp lý nhất.
+
+Thứ ba, xu hướng tăng của V7 cho thấy proposal có tiềm năng khi được đặt trong một lịch huấn luyện phù hợp hơn với điều kiện khởi tạo từ ImageNet. Tuy nhiên, việc mAP không còn tăng thêm từ epoch 100 đến 120 cho thấy run hiện tại đã gần như hoàn tất hội tụ. Vì vậy, V7 nên được xem là bằng chứng cho tính khả thi và độ ổn định của hướng residual visibility-guided fusion, hơn là một kết quả còn có thể tiếp tục bứt phá rộng nếu chỉ kéo dài số epoch.
+
+Từ các quan sát trên, có thể rút ra một cách trình bày cân bằng cho bài báo. Nếu mục tiêu là báo cáo cấu hình có hiệu năng cao nhất, V2 là lựa chọn phù hợp nhất. Nếu mục tiêu là đánh giá proposal trong điều kiện công bằng hơn, V7 lại là kết quả có giá trị phương pháp luận lớn hơn, dù kết quả cuối cùng cho thấy run này đã gần như bão hòa ở epoch 120. Cách diễn giải này cho phép vừa giữ được kết quả mạnh nhất về mặt định lượng, vừa không đánh đồng hoàn toàn tác động của proposal với tác động của checkpoint ReID mạnh.
+
+Cuối cùng, nghiên cứu vẫn còn hai hạn chế. Thứ nhất, các thí nghiệm hiện mới tập trung chủ yếu trên Market-1501; DukeMTMC-reID mới được giữ ở mức benchmark dự kiến chứ chưa được triển khai đầy đủ trong chuỗi thực nghiệm hiện tại. Thứ hai, mô hình V7 đã được theo dõi đến epoch 120 và cho thấy xu hướng bão hòa; do đó, nếu muốn tiếp tục cải thiện setting ImageNet-pretrained, việc kéo dài số epoch đơn thuần có thể sẽ không đủ, mà cần xét đến các thay đổi về lịch learning rate hoặc chiến lược huấn luyện.
