@@ -8,7 +8,7 @@
 Ảnh đầu vào trước hết được chia thành các patch và đưa qua backbone Transformer của TransReID để thu được tập đặc trưng patch. Trên các đặc trưng này, một nhánh phụ được thêm vào để dự đoán trọng số cho từng patch. Các trọng số này sau đó được dùng để tái trọng số đặc trưng patch trước khi tổng hợp thành đặc trưng cuối cùng phục vụ cho bài toán nhận dạng lại người.
 
 Pipeline có thể mô tả như sau:
-\begin{figure}[H]
+\begin{figure*}[!b]
     \centering
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
@@ -23,8 +23,9 @@ Pipeline có thể mô tả như sau:
         \caption{Sơ đồ pipeline của phương pháp đề xuất, bao gồm backbone TransReID và cơ chế Visibility-Guided Patch Weighting.}
         \label{fig:new_pipeline}
     \end{subfigure}
+    \caption{So sánh pipeline baseline và pipeline đề xuất.}
     \label{fig:two_pipelines}
-\end{figure}
+\end{figure*}
 
 Trong đó, \(f_i\) là đặc trưng của patch thứ \(i\), \(w_i\) là trọng số học được, và \(f_{\text{final}}\) là đặc trưng cuối cùng dùng để truy hồi.
 
