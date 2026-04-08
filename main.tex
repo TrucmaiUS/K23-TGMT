@@ -6,10 +6,14 @@
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
+\usepackage{array}
+\usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{url}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
 \renewcommand{\abstractname}{Tóm tắt}
 \renewcommand{\IEEEkeywordsname}{Từ khóa}
@@ -35,7 +39,7 @@
 \input{sections/related_work}
 \input{sections/proposed_method}
 \input{sections/experimental_setup}
-\input{sections/experimental_reasoning}
+\input{sections/experimental}
 \input{sections/results_discussion}
 \input{sections/conclusion}
 
@@ -44,6 +48,7 @@
 % \input{appendix/appendix_a}
 
 \bibliographystyle{IEEEtran}
+\newpage
 \bibliography{ref/refs}
 
 \end{document}

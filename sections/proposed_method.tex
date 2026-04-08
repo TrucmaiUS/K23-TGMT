@@ -1,12 +1,13 @@
 \section{Phương pháp đề xuất}
+\label{sec:proposed_method}
 
-Đề tài đề xuất một phương pháp dựa trên \textbf{TransReID} kết hợp với cơ chế \textbf{Visibility-Guided Patch Weighting}. Ý tưởng chính là học trọng số cho từng patch đặc trưng để tăng ảnh hưởng của các vùng giàu thông tin nhận dạng và giảm tác động của các vùng bị che khuất, nền phức tạp hoặc ít ổn định giữa các camera.
+Nghiên cứu này xây dựng một họ phương pháp dựa trên \textbf{TransReID}~\cite{he2021transreidtransformerbasedobjectreidentification} với mục tiêu khai thác thông tin nhìn thấy ở mức patch nhằm cải thiện chất lượng biểu diễn cho bài toán \textit{person re-identification}. Giả thuyết trung tâm là không phải mọi patch đều đóng góp như nhau vào đặc trưng cuối cùng: các patch chứa vùng người ổn định, ít bị che khuất và giàu thông tin nhận dạng cần được ưu tiên hơn so với các patch nền hoặc patch nhiễu. Trên cơ sở đó, nghiên cứu bổ sung vào pipeline của TransReID một nhánh dự đoán trọng số nhìn thấy cho từng patch, sau đó khảo sát nhiều chiến lược tích hợp khác nhau, từ thay thế trực tiếp, hợp nhất tuyến tính cho đến hiệu chỉnh residual có kiểm soát.
 
-\subsection{Pipeline}
+\subsection{Tổng quan kiến trúc}
 
-Ảnh đầu vào trước hết được chia thành các patch và đưa qua backbone Transformer của TransReID để thu được tập đặc trưng patch. Trên các đặc trưng này, một nhánh phụ được thêm vào để dự đoán trọng số cho từng patch. Các trọng số này sau đó được dùng để tái trọng số đặc trưng patch trước khi tổng hợp thành đặc trưng cuối cùng phục vụ cho bài toán nhận dạng lại người.
+Ảnh đầu vào trước hết được chia thành các patch và được đưa qua backbone Transformer của TransReID để thu được tập patch embeddings cùng đặc trưng toàn cục. Trên không gian đặc trưng này, một nhánh phụ được thêm vào nhằm ước lượng mức độ hữu ích của từng patch đối với nhiệm vụ truy hồi. Các trọng số thu được không thay đổi backbone gốc, mà được sử dụng để xây dựng một đặc trưng phụ trợ phản ánh phần thông tin nhìn thấy đáng tin cậy hơn. Tùy theo từng biến thể thực nghiệm, đặc trưng phụ trợ này sẽ được sử dụng theo các cách khác nhau để hình thành đặc trưng truy hồi cuối cùng.
 
-Hình~\ref{fig:two_pipelines} minh họa đồng thời pipeline baseline và pipeline của phương pháp đề xuất để thuận tiện cho việc đối chiếu trực quan.
+Hình~\ref{fig:two_pipelines} minh họa đồng thời pipeline baseline và pipeline mở rộng để làm rõ vị trí của nhánh \textit{visibility-guided patch weighting} trong kiến trúc tổng thể.
 
 \begin{figure*}[!t]
     \centering
@@ -23,72 +24,65 @@ Hình~\ref{fig:two_pipelines} minh họa đồng thời pipeline baseline và pi
         \includegraphics[width=\linewidth]{figures/new_pipeline.png}
         
         \vspace{2pt}
-        \small (b) Pipeline đề xuất với Visibility-Guided Patch Weighting
+        \small (b) Pipeline đề xuất với visibility-guided patch weighting
     \end{minipage}
-    \caption{So sánh giữa pipeline baseline và pipeline của phương pháp đề xuất.}
+    \caption{So sánh giữa pipeline TransReID gốc và pipeline mở rộng với nhánh ước lượng trọng số theo patch.}
     \label{fig:two_pipelines}
 \end{figure*}
 
-Trong đó, \(f_i\) là đặc trưng của patch thứ \(i\), \(w_i\) là trọng số học được, và \(f_{\text{final}}\) là đặc trưng cuối cùng dùng để truy hồi.
+\subsection{Mô hình hóa trọng số nhìn thấy ở mức patch}
 
-\subsection{Trích xuất đặc trưng}
+Ký hiệu \(Z=[z_1,z_2,\dots,z_N]\), với \(z_i \in \mathbb{R}^{d}\), là tập patch embeddings được trích xuất từ backbone. Để lượng hóa tầm quan trọng của từng patch, nghiên cứu bổ sung một đầu dự đoán nhẹ dưới dạng MLP, cho đầu ra là trọng số nhìn thấy \(w_i\):
+\[
+w_i = \sigma(\mathrm{MLP}(z_i)),
+\]
+trong đó \(\sigma(\cdot)\) là hàm sigmoid. Trọng số lớn hơn tương ứng với patch được xem là chứa nhiều thông tin hữu ích hơn cho nhận dạng.
 
-Backbone TransReID được sử dụng để trích xuất đặc trưng từ ảnh đầu vào dưới dạng các patch embeddings:
+Từ các trọng số này, một đặc trưng phụ trợ dựa trên patch được xây dựng thông qua phép tổng hợp có trọng số:
 \[
-F = [f_1,f_2,\dots,f_N], \quad f_i \in \mathbb{R}^d
+f_{\mathrm{vis}} = \frac{\sum_{i=1}^{N} w_i z_i}{\sum_{i=1}^{N} w_i + \epsilon},
 \]
-Để xử lý việc không phải patch nào cũng hữu ích như nhau, đề tài bổ sung một nhánh nhỏ dự đoán trọng số cho từng patch:
+trong đó \(\epsilon\) là hằng số nhỏ nhằm tránh chia cho $0$. Cách biểu diễn này cho phép mô hình tập trung mạnh hơn vào các vùng đáng tin cậy, đồng thời giảm ảnh hưởng của các patch bị che khuất hoặc chứa nền.
+
+\subsection{Các chiến lược tích hợp đặc trưng}
+
+Thay vì giả định duy nhất một cách kết hợp giữa đặc trưng toàn cục gốc và đặc trưng phụ trợ theo patch, nghiên cứu khảo sát một họ chiến lược tích hợp. Trong biến thể hợp nhất tuyến tính, đặc trưng cuối cùng được xác định bởi
 \[
-w_i = \sigma(\text{MLP}(f_i))
+f_{\mathrm{final}} = \alpha f_{\mathrm{global}} + (1-\alpha) f_{\mathrm{vis}},
 \]
-Sau đó, đặc trưng cuối được tính bằng cách tổng hợp các patch đã được tái trọng số:
+với \(f_{\mathrm{global}}\) là đặc trưng toàn cục của TransReID và \(\alpha \in [0,1]\) là hệ số điều khiển mức đóng góp của nhánh mới. Thiết kế này cho phép bảo toàn lợi thế của biểu diễn global gốc, trong khi vẫn khai thác thông tin từ các patch có độ tin cậy cao.
+
+Đối với các cấu hình được huấn luyện từ khởi tạo ImageNet, nghiên cứu còn khảo sát một dạng tích hợp bảo thủ hơn dưới dạng hiệu chỉnh residual:
 \[
-f_{\text{final}} = \sum_{i=1}^{N} w_i f_i
+f_{\mathrm{final}} = f_{\mathrm{global}} + g \cdot \bigl(f_{\mathrm{vis}} - f_{\mathrm{global}}\bigr),
 \]
-Cách biểu diễn này giúp mô hình tập trung nhiều hơn vào các vùng đáng tin cậy và giảm ảnh hưởng của các vùng gây nhiễu.
+trong đó \(g\) là hệ số cổng học được. Cơ chế này bảo đảm nhánh mới chỉ điều chỉnh biểu diễn gốc một cách từ từ, nhờ đó làm quá trình tối ưu ổn định hơn khi mô hình chưa mang sẵn tri thức ReID chuyên biệt.
+
+Ngoài hai chiến lược chính nêu trên, các thực nghiệm cũng khảo sát những biến thể khác như áp dụng weighting trên các nhánh local của JPM, lọc foreground-aware top-k patches, hoặc mở rộng pipeline bằng token enrichment và synthetic occlusion augmentation. Các biến thể này không thay đổi giả thuyết cơ sở của phương pháp, mà đóng vai trò khảo sát mức độ phù hợp của từng cách tích hợp trong những điều kiện khởi tạo khác nhau.
+
+\subsection{Biến thể mở rộng cho giao thức huấn luyện từ khởi tạo ImageNet}
+
+Trong nhánh thực nghiệm mở rộng, mô hình không chỉ sử dụng trọng số patch để tổng hợp đặc trưng, mà còn xây dựng một \textit{visible prototype} từ nhóm patch có trọng số cao nhất. Gọi \(\mathrm{TopK}\) là tập các patch được giữ lại, prototype được tính như sau:
+\[
+p = \sum_{i \in \mathrm{TopK}} \alpha_i z_i,
+\qquad
+\alpha_i = \frac{\exp(w_i)}{\sum_{j \in \mathrm{TopK}} \exp(w_j)}.
+\]
+Prototype này sau đó được dùng để tăng cường trở lại cho patch embeddings:
+\[
+\tilde{z}_i = z_i + \lambda w_i p.
+\]
+Thiết kế trên cho phép nhánh patch-level không chỉ làm nhiệm vụ đánh trọng số, mà còn lan truyền thông tin từ các vùng có độ tin cậy cao đến toàn bộ biểu diễn.
+
+Song song với đó, nghiên cứu khảo sát \textit{synthetic occlusion augmentation}, trong đó một phần ảnh huấn luyện được tạo thêm phiên bản che khuất tổng hợp để tăng tính bền vững của mô hình trước các tình huống occlusion. Như vậy, biến thể mở rộng này đại diện cho hướng tiếp cận kết hợp nhiều cơ chế nhằm cải thiện chất lượng truy hồi trong điều kiện huấn luyện lại toàn bộ từ khởi tạo ImageNet.
 
 \subsection{Hàm mất mát}
-Để huấn luyện mô hình, đề tài sử dụng kết hợp \textbf{ID classification loss} và \textbf{triplet loss}, đồng thời bổ sung một thành phần điều chuẩn cho nhánh weighting nếu cần thiết.
 
-\paragraph{Cross-Entropy Loss} Hàm mất mát phân loại danh tính được dùng để buộc mô hình học đặc trưng có khả năng phân biệt các danh tính khác nhau:
+Về tối ưu hóa, mô hình kế thừa công thức huấn luyện chuẩn của TransReID, bao gồm \textit{identity classification loss} và \textit{triplet loss}. Tổng quát, hàm mất mát được viết dưới dạng
 \[
-L_{id} = - \sum_{c=1}^{C} y_c \log \hat{y}_c
+\mathcal{L}
+= \mathcal{L}_{id}
++ \lambda_{1}\mathcal{L}_{tri}
++ \lambda_{2}\mathcal{L}_{reg},
 \]
-trong đó \(C\) là số lớp danh tính, \(y_c\) là nhãn thật và \(\hat{y}_c\) là xác suất dự đoán.
-
-\paragraph{Triplet Loss} Để tối ưu trực tiếp quan hệ khoảng cách trong không gian đặc trưng, đề tài sử dụng triplet loss trên đặc trưng cuối \(f_{\text{final}}\). Với anchor \(a\), positive \(p\) và negative \(n\), triplet loss được viết:
-\[
-L_{tri} = \max \left(0, d(f_a,f_p) - d(f_a,f_n) + m \right)
-\]
-trong đó \(d(\cdot,\cdot)\) là khoảng cách Euclid và \(m\) là margin. Hàm mất mát này giúp kéo đặc trưng của cùng một người lại gần nhau và đẩy đặc trưng của những người khác ra xa, từ đó cải thiện chất lượng xếp hạng trong truy hồi.
-
-\paragraph{Regularization cho patch weights} Do các trọng số patch được học trực tiếp từ đặc trưng, cần có một cơ chế điều chuẩn để tránh hiện tượng tất cả các patch nhận trọng số gần như nhau hoặc mô hình chỉ tập trung vào rất ít patch. Vì vậy, có thể bổ sung một thành phần điều chuẩn \(L_{reg}\) nhằm ổn định quá trình học trọng số và giữ cho cơ chế weighting hoạt động hiệu quả.
-
-Tổng hàm mất mát của mô hình được xác định như sau:
-\[
-L = L_{id} + \lambda_1 L_{tri} + \lambda_2 L_{reg}
-\]
-trong đó \(\lambda_1\) và \(\lambda_2\) là các hệ số cân bằng giữa các thành phần mất mát.
-
-Sự kết hợp giữa loss phân loại và loss metric giúp mô hình vừa học được ranh giới danh tính rõ ràng, vừa tối ưu trực tiếp chất lượng truy hồi. Đây là lựa chọn phù hợp cho bài toán person re-identification, trong đó mục tiêu cuối cùng không chỉ là phân loại đúng mà còn là sắp xếp đúng thứ tự tương đồng giữa các ảnh.
-
-\subsection{Tập dữ liệu}
-Để đánh giá hiệu quả của phương pháp, thí nghiệm có thể được thực hiện trên các bộ dữ liệu person re-identification phổ biến như \textbf{Market-1501}~\cite{zheng2015market1501} và \textbf{DukeMTMC-reID}~\cite{gou2017dukemtmc4reid}. Đây là các bộ dữ liệu chuẩn, được sử dụng rộng rãi trong nhiều nghiên cứu ReID, cho phép so sánh kết quả một cách công bằng với các phương pháp trước đó.
-
-\begin{itemize}
-    \item \textbf{Market-1501}: gồm hơn 32,000 ảnh của 1,501 danh tính được thu thập từ 6 camera. Đây là bộ dữ liệu phổ biến nhất và thường được dùng làm benchmark cơ bản.
-    \item \textbf{DukeMTMC-reID}: gồm hơn 36,000 ảnh của 1,404 danh tính từ 8 camera, có mức độ đa dạng lớn hơn về góc nhìn và điều kiện quan sát.
-\end{itemize}
-
-Trong phạm vi đề tài, có thể ưu tiên sử dụng \textbf{Market-1501} làm tập dữ liệu chính để xây dựng và kiểm chứng ý tưởng, sau đó mở rộng đánh giá trên \textbf{DukeMTMC-reID} nếu điều kiện thời gian và tài nguyên cho phép. Cách lựa chọn này giúp cân bằng giữa tính khả thi khi triển khai và giá trị học thuật của thí nghiệm.
-
-\subsection{Phương pháp đánh giá}
-
-Hiệu quả của mô hình được đánh giá bằng các chỉ số chuẩn trong bài toán person re-identification, bao gồm \textbf{CMC} và \textbf{mAP}.
-
-\begin{itemize}
-    \item \textbf{Rank-1, Rank-5, Rank-10}: phản ánh khả năng ảnh đúng xuất hiện trong top-\(k\) kết quả truy hồi.
-    \item \textbf{mAP}: đánh giá chất lượng xếp hạng tổng thể, là chỉ số đặc biệt quan trọng trong bài toán ReID.
-\end{itemize}
-
-Ngoài ra, cần thực hiện \textbf{ablation study} để so sánh giữa mô hình TransReID gốc và mô hình đề xuất có thêm cơ chế Visibility-Guided Patch Weighting. Kỳ vọng chính của phương pháp là cải thiện \textbf{mAP} rõ hơn \textbf{Rank-1}, do cơ chế đề xuất tác động trực tiếp đến chất lượng biểu diễn và thứ tự truy hồi.
+trong đó \(\mathcal{L}_{reg}\) là thành phần điều chuẩn cho nhánh weighting nhằm tránh hiện tượng các patch nhận trọng số gần như đồng nhất hoặc phân phối trọng số bị suy biến. Ở các biến thể mở rộng có token enrichment và occlusion augmentation, hàm mất mát còn có thể được bổ sung thêm các thành phần nhất quán đặc trưng và loss trên mẫu che khuất. Dù vậy, triết lý chung của toàn bộ họ phương pháp vẫn không thay đổi: nhánh patch-level phải hoạt động như một cơ chế bổ trợ có kiểm soát cho biểu diễn ReID, thay vì thay thế hoàn toàn nhánh global vốn đã mạnh của TransReID.
