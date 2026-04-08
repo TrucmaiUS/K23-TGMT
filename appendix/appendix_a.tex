@@ -1,4 +1,51 @@
 % !TeX root = ../main.tex
-\section{Chứng minh bổ sung hoặc kết quả mở rộng}
-Đặt các nội dung bổ trợ, phép biến đổi chi tiết hoặc kết quả mở rộng tại đây
-nếu cần.
+\section{Cấu hình thực nghiệm chi tiết}
+\label{sec:appendix_experimental_config}
+
+\subsection{Thiết lập cài đặt chung}
+Trừ khi có ghi chú khác, các thực nghiệm đều sử dụng backbone
+\texttt{vit\_base\_patch16\_224\_TransReID} với cấu hình stride
+\texttt{[12,12]}, \texttt{JPM=True} và \texttt{SIE\_CAMERA=True}. Kích thước
+ảnh đầu vào cho cả huấn luyện và đánh giá là $256 \times 128$. Các thiết lập
+huấn luyện chung xuất hiện ổn định trong các lần huấn luyện chính gồm:
+optimizer \textbf{SGD}, batch size toàn cục $64$, \texttt{NUM\_INSTANCE=4},
+weight decay $10^{-4}$, random horizontal flip với xác suất $0.5$, random
+erasing với xác suất $0.5$, warm-up tuyến tính trong $10$ epoch và đánh giá
+định kỳ sau mỗi $20$ epoch.
+
+Ở pha suy luận, các mô hình được đánh giá với \texttt{FEAT\_NORM=yes} và đặc
+trưng trước neck. Riêng các cấu hình sử dụng cơ chế hợp nhất tại JPM hoặc hiệu
+chỉnh residual vẫn giữ nguyên pipeline truy hồi của TransReID, chỉ thay đổi
+cách hình thành đặc trưng đầu ra từ thông tin patch-level.
+
+\subsection{Thiết lập dữ liệu và cấu hình của biến thể OVTF}
+Thực nghiệm được thực hiện trên bộ dữ liệu Market-1501
+\cite{zheng2015market1501}. Theo định nghĩa dataset trong nhánh
+\texttt{train}, bộ dữ liệu được chia theo chuẩn gồm $12{,}936$ ảnh huấn luyện
+cho $751$ định danh, $3{,}368$ ảnh query và $15{,}913$ ảnh gallery.
+
+Để làm rõ mức cải thiện, phần này sử dụng hai cấu hình tại cùng mốc
+\textbf{epoch 120}:
+\begin{itemize}
+    \item \textbf{Baseline TransReID gốc}: giữ nguyên cấu hình TransReID stride
+    trên Market-1501 với \texttt{vit\_base\_patch16\_224\_TransReID},
+    \texttt{STRIDE\_SIZE=[12,12]}, \texttt{SIE\_CAMERA=True},
+    \texttt{JPM=True}, đồng thời tắt toàn bộ các thành phần bổ sung gồm
+    \texttt{VIS\_WEIGHT}, \texttt{TOKEN\_ENRICH}, \texttt{OCC\_AUG} và
+    \texttt{LOCAL\_GROUP}.
+    \item \textbf{Biến thể OVTF}: giữ nguyên backbone TransReID stride và bật
+    \texttt{VIS\_WEIGHT}, \texttt{TOKEN\_ENRICH} và \texttt{OCC\_AUG}, trong khi
+    \texttt{LOCAL\_GROUP} được lược bỏ.
+\end{itemize}
+
+Ở pha suy luận, hệ thống sử dụng \texttt{USE\_JPM\_FUSION=True}, nghĩa là đặc
+trưng truy hồi cuối cùng được ghép từ nhánh toàn cục và bốn nhánh cục bộ JPM.
+
+Siêu tham số cho huấn luyện:
+\begin{itemize}
+    \item optimizer SGD, learning rate ban đầu $0.008$.
+    \item batch size $64$, với \texttt{NUM\_INSTANCE=4}.
+    \item weight decay $10^{-4}$.
+    \item random horizontal flip với xác suất $0.5$.
+    \item random erasing với xác suất $0.5$.
+\end{itemize}

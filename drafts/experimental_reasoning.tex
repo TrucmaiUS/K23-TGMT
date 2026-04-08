@@ -13,8 +13,6 @@ Trong toàn bộ quá trình, các thí nghiệm luôn được phân tách rõ 
 
 \begin{table*}[!t]
     \centering
-    \caption{Tóm tắt các phiên bản thí nghiệm chính}
-    \label{tab:experiment_timeline}
     \begin{tabular}{p{1.1cm} p{4.5cm} p{3.9cm} p{3.4cm} p{3.5cm}}
         \hline
         Phiên bản & Ý tưởng chính & Nguồn khởi tạo & Kết quả tốt nhất đã quan sát & Nhận xét chính \\
@@ -27,6 +25,8 @@ Trong toàn bộ quá trình, các thí nghiệm luôn được phân tách rõ 
         V7 & Residual visibility-guided fusion với gate khởi tạo nhỏ & ImageNet pretrained & Best: 88.4\%/94.9\% tại epoch 100; final: 88.4\%/94.8\% tại epoch 120 & Cấu hình ImageNet-pretrained khả thi nhất hiện tại \\
         \hline
     \end{tabular}
+    \caption{Tóm tắt các phiên bản thí nghiệm chính}
+    \label{tab:experiment_timeline}
 \end{table*}
 
 \subsection{Pha thử nghiệm ban đầu: thay thế trực tiếp đặc trưng toàn cục}
@@ -49,8 +49,6 @@ Trong setting fine-tune từ \texttt{vit\_transreid\_market.pth}, V2 đạt các
 
 \begin{table}[!h]
     \centering
-    \caption{Kết quả của V2 theo các mốc đánh giá}
-    \label{tab:v2_results}
     \begin{tabular}{c c c}
         \hline
         Epoch & mAP & Rank-1 \\
@@ -63,6 +61,8 @@ Trong setting fine-tune từ \texttt{vit\_transreid\_market.pth}, V2 đạt các
         120 & 89.5\% & 95.5\% \\
         \hline
     \end{tabular}
+    \caption{Kết quả của V2 theo các mốc đánh giá}
+    \label{tab:v2_results}
 \end{table}
 
 Đây là kết quả tốt nhất trong toàn bộ nhóm thí nghiệm fine-tune. Về mặt thực nghiệm, V2 cho thấy một kết luận rõ ràng: proposal không phù hợp khi thay thế biểu diễn gốc, nhưng có thể được tích hợp hiệu quả khi đóng vai trò nhánh tăng cường có kiểm soát.
@@ -109,8 +109,6 @@ với \(g\) được khởi tạo nhỏ để bảo đảm mô hình trong giai 
 
 \begin{table}[!h]
     \centering
-    \caption{Kết quả của V7 trong setting ImageNet pretrained}
-    \label{tab:v7_results}
     \begin{tabular}{c c c}
         \hline
         Epoch & mAP & Rank-1 \\
@@ -123,6 +121,8 @@ với \(g\) được khởi tạo nhỏ để bảo đảm mô hình trong giai 
         120 & 88.4\% & 94.8\% \\
         \hline
     \end{tabular}
+    \caption{Kết quả của V7 trong setting ImageNet pretrained}
+    \label{tab:v7_results}
 \end{table}
 
 V7 thấp hơn nhóm fine-tune từ checkpoint ReID mạnh, nhưng điều đó phù hợp với thiết lập công bằng hơn của bài toán. Điều quan trọng là V7 hội tụ ổn định, mAP tăng đều qua các mốc 20, 40, 60, 80 và 100 epoch, sau đó hầu như không còn cải thiện thêm đến epoch 120. Kết quả này cho thấy V7 hiện là biến thể khả thi nhất trong nhóm ImageNet-pretrained, nhưng đồng thời cũng cho thấy mô hình đã tiến rất gần với điểm bão hòa.

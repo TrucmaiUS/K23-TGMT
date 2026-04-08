@@ -13,9 +13,16 @@ Ngược lại, thiết lập huấn luyện toàn bộ mô hình với khởi t
 
 \subsection{Ảnh hưởng của chiến lược tích hợp}
 
-Các kết quả thực nghiệm cho thấy hiệu quả của nhánh patch-level phụ thuộc mạnh vào cách tích hợp với đặc trưng global. Khi đặc trưng patch được dùng để thay thế trực tiếp biểu diễn toàn cục, hiệu năng suy giảm nghiêm trọng. Điều này hàm ý rằng trong TransReID, nhánh global gốc vẫn giữ vai trò trung tâm đối với nhiệm vụ truy hồi và không thể bị thay thế một cách cơ học bởi một đặc trưng patch-level, ngay cả khi đặc trưng này đã được điều chỉnh theo visibility.
+Các kết quả thực nghiệm cho thấy hiệu quả của nhánh patch-level phụ thuộc mạnh vào cách tích hợp với đặc trưng toàn cục. Khi đặc trưng patch được dùng để thay thế trực tiếp biểu diễn toàn cục, hiệu năng suy giảm nghiêm trọng. Điều này hàm ý rằng trong TransReID, nhánh toàn cục gốc vẫn giữ vai trò trung tâm đối với nhiệm vụ truy hồi và không thể bị thay thế một cách cơ học bởi một đặc trưng patch-level, ngay cả khi đặc trưng này đã được điều chỉnh theo visibility.
 
-Ngược lại, khi nhánh patch được đưa vào dưới dạng tín hiệu bổ trợ hoặc hiệu chỉnh có kiểm soát, mô hình đạt được sự cân bằng tốt hơn giữa ổn định tối ưu và khả năng cải thiện chất lượng biểu diễn. Biến thể hợp nhất toàn cục có trọng số minh họa điều này trong điều kiện fine-tune từ checkpoint ReID, còn biến thể hiệu chỉnh residual có cổng minh họa điều này trong điều kiện khởi tạo từ ImageNet. Biến thể mở rộng chống che khuất tiếp tục đẩy kết quả đi xa hơn bằng cách kết hợp nhiều cơ chế bổ trợ, nhưng đồng thời cũng làm cho việc quy kết đóng góp của từng thành phần riêng lẻ trở nên khó hơn.
+Ngược lại, khi nhánh patch được đưa vào dưới dạng tín hiệu bổ trợ hoặc hiệu
+chỉnh có kiểm soát, mô hình đạt được sự cân bằng tốt hơn giữa ổn định tối ưu và
+khả năng cải thiện chất lượng biểu diễn. Biến thể hợp nhất toàn cục có trọng số
+minh họa điều này trong điều kiện fine-tune từ checkpoint ReID, còn biến thể
+hiệu chỉnh residual có cổng minh họa điều này trong điều kiện khởi tạo từ
+ImageNet. OVTF tiếp tục đẩy kết quả đi xa hơn bằng cách kết hợp nhiều cơ chế bổ
+trợ, nhưng đồng thời cũng làm cho việc quy kết đóng góp của từng thành phần
+riêng lẻ trở nên khó hơn.
 
 \subsection{Lựa chọn cấu hình đại diện cho báo cáo}
 
@@ -25,6 +32,6 @@ Vì vậy, cách trình bày cân bằng nhất cho báo cáo là sử dụng bi
 
 \subsection{Hạn chế và hướng nghiên cứu tiếp theo}
 
-Báo cáo hiện vẫn còn một số hạn chế cần được nêu rõ. Thứ nhất, hầu hết các bằng chứng định lượng mới chỉ được xác nhận trên Market-1501; vì vậy chưa đủ cơ sở để kết luận về khả năng tổng quát hóa liên miền sang DukeMTMC-reID hoặc các benchmark khác. Thứ hai, không phải biến thể nào cũng có log đầy đủ ở mọi mốc đánh giá, nên mức độ so sánh chi tiết giữa các cấu hình vẫn còn không đồng đều. Thứ ba, các kết quả hiện tại chủ yếu dựa trên một số lần chạy đại diện, chưa có đánh giá đa seed để kiểm tra độ ổn định thống kê.
+Báo cáo hiện vẫn còn một số hạn chế cần được nêu rõ. Thứ nhất, hầu hết các bằng chứng định lượng mới chỉ được xác nhận trên Market-1501; vì vậy chưa đủ cơ sở để kết luận về khả năng tổng quát hóa liên miền sang DukeMTMC-reID hoặc các benchmark khác. Thứ hai, không phải biến thể nào cũng có log đầy đủ ở mọi mốc đánh giá, nên mức độ so sánh chi tiết giữa các cấu hình vẫn còn không đồng đều. Thứ ba, các kết quả hiện tại chủ yếu dựa trên một số lần chạy đại diện, chưa có đánh giá kiểm tra độ ổn định thống kê.
 
-Trong các bước tiếp theo, hướng mở rộng hợp lý là tái triển khai các cấu hình tốt nhất trên DukeMTMC-reID, chuẩn hóa số lần chạy lặp, đồng thời khảo sát thêm các lịch learning rate và cơ chế regularization cho thiết lập khởi tạo từ ImageNet. Đặc biệt, việc kết hợp ưu điểm về ổn định của cơ chế hiệu chỉnh residual với các thành phần tăng cường của biến thể mở rộng chống che khuất là một hướng nghiên cứu đáng quan tâm, vì đây là hai dòng thực nghiệm đang cho thấy những điểm mạnh bổ sung cho nhau.
+Trong các bước tiếp theo, hướng mở rộng hợp lý là tái triển khai các cấu hình tốt nhất trên DukeMTMC-reID, chuẩn hóa số lần chạy lặp, đồng thời khảo sát thêm các learning rate scheduler và cơ chế regularization cho thiết lập khởi tạo từ ImageNet. Đặc biệt, việc kết hợp ưu điểm về ổn định của cơ chế hiệu chỉnh residual với các thành phần tăng cường của biến thể mở rộng chống che khuất là một hướng nghiên cứu đáng quan tâm, vì đây là hai dòng thực nghiệm đang cho thấy những điểm mạnh bổ sung cho nhau.

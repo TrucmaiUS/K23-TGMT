@@ -6,8 +6,6 @@ Phần này tổng hợp các kết quả định lượng quan trọng nhất v
 
 \begin{table*}[!t]
     \centering
-    \caption{So sánh các biến thể chính trên Market-1501}
-    \label{tab:main_results}
     \begin{tabular}{p{1.1cm} p{4.8cm} p{3.6cm} c c}
         \hline
         Phiên bản & Mô tả ngắn & Khởi tạo & mAP & Rank-1 \\
@@ -23,7 +21,10 @@ Phần này tổng hợp các kết quả định lượng quan trọng nhất v
 
     \vspace{4pt}
 
-    \footnotesize{* V7 đạt mức tốt nhất 88.4\% mAP và 94.9\% Rank-1 tại epoch 100; kết quả epoch 120 là 88.4\% mAP và 94.8\% Rank-1.}
+    \caption{So sánh các biến thể chính trên Market-1501}
+    \label{tab:main_results}
+
+    {\footnotesize * V7 đạt mức tốt nhất 88.4\% mAP và 94.9\% Rank-1 tại epoch 100; kết quả epoch 120 là 88.4\% mAP và 94.8\% Rank-1.}
 \end{table*}
 
 Bảng~\ref{tab:main_results} cho thấy V2 là cấu hình đạt hiệu năng cao nhất về mặt tuyệt đối, với mAP 89.5\% và Rank-1 95.5\%. Điều này xác nhận rằng khi proposal được tích hợp theo cơ chế fusion có kiểm soát, TransReID không những không bị suy giảm mà còn duy trì được mức hiệu năng cạnh tranh rất cao trên Market-1501. Trái lại, V1 cho thấy việc thay thế trực tiếp đặc trưng global bằng weighted patch feature là không khả thi, vì hiệu năng giảm mạnh xuống 64.0\% mAP và 81.8\% Rank-1.

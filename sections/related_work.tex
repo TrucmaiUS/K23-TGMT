@@ -5,8 +5,8 @@
 \section{Các công trình liên quan}
 
 \subsection{Phạm vi khảo sát}
-Mục này tập trung tổng hợp các hướng tiếp cận tiêu biểu trong Person
-Re-identification theo các nhóm phương pháp chính. Việc khảo sát được tổ chức
+Tập trung tổng hợp các hướng tiếp cận tiêu biểu trong Person
+ReID theo các nhóm phương pháp chính. Khảo sát được tổ chức
 theo kiến trúc mô hình, cơ chế học đặc trưng và định hướng cải tiến, từ đó làm
 rõ ưu điểm, hạn chế và khoảng trống nghiên cứu để định vị hướng đề xuất của đề
 tài.
@@ -16,7 +16,7 @@ Các phương pháp theo bộ phận cơ thể chia ảnh người thành nhiề
 dọc để học đặc trưng cục bộ. Hướng này giúp mô hình tập trung vào các chi tiết
 phân biệt như áo, quần, ba lô hoặc giày.
 
-Trong \textbf{Beyond Part Models: Person Retrieval with Refined Part Pooling
+\textbf{Beyond Part Models: Person Retrieval with Refined Part Pooling
 (and a Strong Convolutional Baseline)} \cite{sun2018modelspersonretrievalrefined},
 tác giả đề xuất biểu diễn người bằng nhiều vector đặc trưng theo từng phần cơ
 thể, sau đó tinh chỉnh quá trình gộp đặc trưng để tăng tính ổn định. Một hướng
@@ -24,14 +24,15 @@ mở rộng quan trọng là kết hợp Part-based Convolutional Baseline/Refin
 Pooling với metric learning bên cạnh phân loại ID bằng Softmax, giúp cải thiện
 chất lượng truy hồi trong các trường hợp mẫu âm khó.
 
-Ngoài ra, \textbf{Learning Diverse Features with Part-Level Resolution for
+\textbf{Learning Diverse Features with Part-Level Resolution for
 Person Re-Identification} \cite{xie2020learningdiversefeaturespartlevel} cho
 thấy việc học đa dạng đặc trưng ở các phần cơ thể có thể tăng độ bền vững khi
 một số vùng bị nhiễu hoặc che khuất.
 
 \subsection{Nhóm CNN đa nhánh và đa tỉ lệ}
 Nhóm này khai thác thông tin ở nhiều mức hạt khác nhau để cân bằng giữa đặc
-trưng toàn cục và cục bộ. \textbf{Learning Discriminative Features with
+trưng toàn cục và cục bộ.
+\textbf{Learning Discriminative Features with
 Multiple Granularities for Person Re-Identification} \cite{Wang_2018} sử dụng
 nhiều nhánh song song để trích xuất đặc trưng ở các độ phân giải khác nhau, nhờ
 đó tăng độ phân biệt cho bài toán xếp hạng.
@@ -46,7 +47,7 @@ Nhóm này tập trung vào việc học quan hệ ngữ nghĩa giữa các vùn
 khả năng mô hình hóa phụ thuộc dài hạn. Nhờ đó, mô hình có thể giảm sai lệch do
 thay đổi tư thế, góc nhìn và tình trạng thiếu thông tin ở một số vùng ảnh.
 
-Trong \textbf{Densely Semantically Aligned Person Re-Identification}
+\textbf{Densely Semantically Aligned Person Re-Identification}
 \cite{zhang2019denselysemanticallyalignedperson}, tác giả đưa thông tin ngữ
 nghĩa vào quá trình căn chỉnh đặc trưng để giảm sai lệch do tư thế và góc nhìn.
 Hướng này đặc biệt hữu ích khi các phần cơ thể xuất hiện không đầy đủ giữa các
@@ -72,15 +73,13 @@ của việc dùng tín hiệu ngữ nghĩa để bổ sung cho đặc trưng ng
 khi chỉ dựa trên đặc trưng ngoại hình dễ gây nhầm lẫn.
 
 \subsection{Khoảng trống nghiên cứu và định hướng đề tài}
-Từ các nghiên cứu trên có thể rút ra ba nhận xét chính:
-\begin{itemize}
-    \item Các mô hình theo bộ phận cơ thể có tính phân biệt tốt, nhưng vẫn nhạy
-    với sai lệch căn chỉnh và che khuất mạnh.
-    \item Các mô hình CNN đa tỉ lệ hoặc Transformer cải thiện biểu diễn đặc
-    trưng, nhưng chi phí tính toán có thể cao khi triển khai thực tế.
-    \item Việc tích hợp đồng thời đặc trưng ngoại hình, tín hiệu ngữ nghĩa và
-    metric learning vẫn là hướng tiềm năng để nâng cao hiệu quả nhận dạng.
-\end{itemize}
+Từ các nghiên cứu trên có thể rút ra ba nhận xét chính. Thứ nhất, các mô hình
+theo bộ phận cơ thể có tính phân biệt tốt, nhưng vẫn nhạy với sai lệch căn
+chỉnh và hiện tượng che khuất mạnh. Thứ hai, các mô hình CNN đa tỉ lệ hoặc
+Transformer cải thiện đáng kể chất lượng biểu diễn đặc trưng, song chi phí tính
+toán thường cao hơn khi triển khai trong thực tế. Thứ ba, việc tích hợp đồng
+thời đặc trưng ngoại hình, tín hiệu ngữ nghĩa và metric learning vẫn là một
+hướng tiếp cận giàu tiềm năng để tiếp tục nâng cao hiệu quả nhận dạng.
 
 Từ đó, đề tài lựa chọn \textbf{TransReID}
 \cite{he2021transreidtransformerbasedobjectreidentification} làm mô hình nền và
