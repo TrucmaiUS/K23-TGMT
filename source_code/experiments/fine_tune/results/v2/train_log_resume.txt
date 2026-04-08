@@ -1,0 +1,211 @@
+2026-04-06 16:51:43,340 transreid INFO: Saving model in the path :/content/drive/MyDrive/TGMT/PROJECT/Colab/req23/logs/market_vit_transreid_stride_visibility_v2
+2026-04-06 16:51:43,340 transreid INFO: Namespace(config_file='configs/Market/vit_transreid_stride_visibility.yml', opts=['MODEL.DEVICE_ID', "('0')", 'MODEL.PRETRAIN_CHOICE', 'self', 'MODEL.PRETRAIN_PATH', "('/content/drive/MyDrive/TGMT/PROJECT/Colab/req23/checkpoint/vit_transreid_market.pth')", 'DATASETS.ROOT_DIR', "('/content/data')", 'OUTPUT_DIR', "('/content/drive/MyDrive/TGMT/PROJECT/Colab/req23/logs/market_vit_transreid_stride_visibility_v2')", 'SOLVER.RESUME', 'True', 'SOLVER.RESUME_PATH', "('/content/drive/MyDrive/TGMT/PROJECT/Colab/req23/logs/market_vit_transreid_stride_visibility_v2/latest_checkpoint.pth')"], local_rank=0)
+2026-04-06 16:51:43,340 transreid INFO: Loaded configuration file configs/Market/vit_transreid_stride_visibility.yml
+2026-04-06 16:51:43,342 transreid INFO: 
+MODEL:
+  PRETRAIN_CHOICE: 'imagenet'
+  PRETRAIN_PATH: '/home/heshuting/.cache/torch/checkpoints/jx_vit_base_p16_224-80ecf9dd.pth'
+  METRIC_LOSS_TYPE: 'triplet'
+  IF_LABELSMOOTH: 'off'
+  IF_WITH_CENTER: 'no'
+  NAME: 'transformer'
+  NO_MARGIN: True
+  DEVICE_ID: ('0')
+  TRANSFORMER_TYPE: 'vit_base_patch16_224_TransReID'
+  STRIDE_SIZE: [12, 12]
+  SIE_CAMERA: True
+  SIE_COE: 3.0
+  JPM: True
+  RE_ARRANGE: True
+  VIS_WEIGHTING: True
+  VIS_HIDDEN_DIM: 256
+  VIS_USE_SOFTMAX: True
+  VIS_FUSION_ALPHA: 0.8
+  VIS_REG_WEIGHT: 0.001
+  VIS_REG_TYPE: 'entropy'
+
+INPUT:
+  SIZE_TRAIN: [256, 128]
+  SIZE_TEST: [256, 128]
+  PROB: 0.5
+  RE_PROB: 0.5
+  PADDING: 10
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+
+DATASETS:
+  NAMES: ('market1501')
+  ROOT_DIR: ('../../data')
+
+DATALOADER:
+  SAMPLER: 'softmax_triplet'
+  NUM_INSTANCE: 4
+  NUM_WORKERS: 2
+
+SOLVER:
+  OPTIMIZER_NAME: 'SGD'
+  MAX_EPOCHS: 120
+  BASE_LR: 0.008
+  IMS_PER_BATCH: 64
+  WARMUP_METHOD: 'linear'
+  LARGE_FC_LR: False
+  CHECKPOINT_PERIOD: 20
+  LOG_PERIOD: 50
+  EVAL_PERIOD: 20
+  SAVE_EVERY_EPOCH: True
+  SAVE_LATEST: True
+  SAVE_BEST: True
+  RESUME: False
+  RESUME_PATH: ''
+  WEIGHT_DECAY: 1e-4
+  WEIGHT_DECAY_BIAS: 1e-4
+  BIAS_LR_FACTOR: 2
+
+TEST:
+  EVAL: True
+  IMS_PER_BATCH: 256
+  RE_RANKING: False
+  WEIGHT: ''
+  NECK_FEAT: 'before'
+  FEAT_NORM: 'yes'
+
+OUTPUT_DIR: '../logs/market_vit_transreid_stride_visibility'
+
+2026-04-06 16:51:43,342 transreid INFO: Running with config:
+DATALOADER:
+  NUM_INSTANCE: 4
+  NUM_WORKERS: 2
+  SAMPLER: softmax_triplet
+DATASETS:
+  NAMES: market1501
+  ROOT_DIR: /content/data
+INPUT:
+  PADDING: 10
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+  PROB: 0.5
+  RE_PROB: 0.5
+  SIZE_TEST: [256, 128]
+  SIZE_TRAIN: [256, 128]
+MODEL:
+  ATT_DROP_RATE: 0.0
+  COS_LAYER: False
+  DEVICE: cuda
+  DEVICE_ID: 0
+  DEVIDE_LENGTH: 4
+  DIST_TRAIN: False
+  DROP_OUT: 0.0
+  DROP_PATH: 0.1
+  ID_LOSS_TYPE: softmax
+  ID_LOSS_WEIGHT: 1.0
+  IF_LABELSMOOTH: off
+  IF_WITH_CENTER: no
+  JPM: True
+  LAST_STRIDE: 1
+  METRIC_LOSS_TYPE: triplet
+  NAME: transformer
+  NECK: bnneck
+  NO_MARGIN: True
+  PRETRAIN_CHOICE: self
+  PRETRAIN_PATH: /content/drive/MyDrive/TGMT/PROJECT/Colab/req23/checkpoint/vit_transreid_market.pth
+  RE_ARRANGE: True
+  SHIFT_NUM: 5
+  SHUFFLE_GROUP: 2
+  SIE_CAMERA: True
+  SIE_COE: 3.0
+  SIE_VIEW: False
+  STRIDE_SIZE: [12, 12]
+  TRANSFORMER_TYPE: vit_base_patch16_224_TransReID
+  TRIPLET_LOSS_WEIGHT: 1.0
+  VIS_FUSION_ALPHA: 0.8
+  VIS_HIDDEN_DIM: 256
+  VIS_REG_TYPE: entropy
+  VIS_REG_WEIGHT: 0.001
+  VIS_USE_SOFTMAX: True
+  VIS_WEIGHTING: True
+OUTPUT_DIR: /content/drive/MyDrive/TGMT/PROJECT/Colab/req23/logs/market_vit_transreid_stride_visibility_v2
+SOLVER:
+  BASE_LR: 0.008
+  BIAS_LR_FACTOR: 2
+  CENTER_LOSS_WEIGHT: 0.0005
+  CENTER_LR: 0.5
+  CHECKPOINT_PERIOD: 20
+  COSINE_MARGIN: 0.5
+  COSINE_SCALE: 30
+  EVAL_PERIOD: 20
+  GAMMA: 0.1
+  IMS_PER_BATCH: 64
+  LARGE_FC_LR: False
+  LOG_PERIOD: 50
+  MARGIN: 0.3
+  MAX_EPOCHS: 120
+  MOMENTUM: 0.9
+  OPTIMIZER_NAME: SGD
+  RESUME: True
+  RESUME_PATH: /content/drive/MyDrive/TGMT/PROJECT/Colab/req23/logs/market_vit_transreid_stride_visibility_v2/latest_checkpoint.pth
+  SAVE_BEST: True
+  SAVE_EVERY_EPOCH: True
+  SAVE_LATEST: True
+  SEED: 1234
+  STEPS: (40, 70)
+  WARMUP_EPOCHS: 5
+  WARMUP_FACTOR: 0.01
+  WARMUP_METHOD: linear
+  WEIGHT_DECAY: 0.0001
+  WEIGHT_DECAY_BIAS: 0.0001
+TEST:
+  DIST_MAT: dist_mat.npy
+  EVAL: True
+  FEAT_NORM: yes
+  IMS_PER_BATCH: 256
+  NECK_FEAT: before
+  RE_RANKING: False
+  WEIGHT: 
+2026-04-06 16:51:46,481 transreid INFO: Resumed training from /content/drive/MyDrive/TGMT/PROJECT/Colab/req23/logs/market_vit_transreid_stride_visibility_v2/latest_checkpoint.pth at epoch 111 with best mAP 89.4%
+2026-04-06 16:51:46,482 transreid.train INFO: start training
+2026-04-06 16:52:13,163 transreid.train INFO: Epoch[111] Iteration[50/186] Loss: 0.054, Acc: 0.998, Base Lr: 1.26e-04
+2026-04-06 16:52:36,163 transreid.train INFO: Epoch[111] Iteration[100/186] Loss: 0.055, Acc: 0.999, Base Lr: 1.26e-04
+2026-04-06 16:52:59,252 transreid.train INFO: Epoch[111] Iteration[150/186] Loss: 0.048, Acc: 0.999, Base Lr: 1.26e-04
+2026-04-06 16:53:14,762 transreid.train INFO: Epoch 111 done. Time per batch: 0.477[s] Speed: 134.1[samples/s]
+2026-04-06 16:53:47,627 transreid.train INFO: Epoch[112] Iteration[50/186] Loss: 0.055, Acc: 0.999, Base Lr: 1.03e-04
+2026-04-06 16:54:16,772 transreid.train INFO: Epoch[112] Iteration[100/186] Loss: 0.047, Acc: 0.999, Base Lr: 1.03e-04
+2026-04-06 16:54:40,211 transreid.train INFO: Epoch[112] Iteration[150/186] Loss: 0.041, Acc: 0.999, Base Lr: 1.03e-04
+2026-04-06 16:54:55,749 transreid.train INFO: Epoch 112 done. Time per batch: 0.503[s] Speed: 127.3[samples/s]
+2026-04-06 16:55:24,022 transreid.train INFO: Epoch[113] Iteration[50/186] Loss: 0.044, Acc: 0.999, Base Lr: 8.28e-05
+2026-04-06 16:55:59,245 transreid.train INFO: Epoch[113] Iteration[100/186] Loss: 0.040, Acc: 0.999, Base Lr: 8.28e-05
+2026-04-06 16:56:22,912 transreid.train INFO: Epoch[113] Iteration[150/186] Loss: 0.037, Acc: 0.999, Base Lr: 8.28e-05
+2026-04-06 16:56:38,939 transreid.train INFO: Epoch 113 done. Time per batch: 0.536[s] Speed: 119.4[samples/s]
+2026-04-06 16:57:05,117 transreid.train INFO: Epoch[114] Iteration[50/186] Loss: 0.048, Acc: 0.999, Base Lr: 6.51e-05
+2026-04-06 16:57:39,447 transreid.train INFO: Epoch[114] Iteration[100/186] Loss: 0.041, Acc: 0.999, Base Lr: 6.51e-05
+2026-04-06 16:58:03,077 transreid.train INFO: Epoch[114] Iteration[150/186] Loss: 0.038, Acc: 0.999, Base Lr: 6.51e-05
+2026-04-06 16:58:19,114 transreid.train INFO: Epoch 114 done. Time per batch: 0.530[s] Speed: 120.7[samples/s]
+2026-04-06 16:58:45,527 transreid.train INFO: Epoch[115] Iteration[50/186] Loss: 0.041, Acc: 1.000, Base Lr: 5.02e-05
+2026-04-06 16:59:20,191 transreid.train INFO: Epoch[115] Iteration[100/186] Loss: 0.038, Acc: 0.999, Base Lr: 5.02e-05
+2026-04-06 16:59:43,951 transreid.train INFO: Epoch[115] Iteration[150/186] Loss: 0.034, Acc: 1.000, Base Lr: 5.02e-05
+2026-04-06 16:59:59,527 transreid.train INFO: Epoch 115 done. Time per batch: 0.533[s] Speed: 120.0[samples/s]
+2026-04-06 17:00:25,756 transreid.train INFO: Epoch[116] Iteration[50/186] Loss: 0.043, Acc: 0.999, Base Lr: 3.79e-05
+2026-04-06 17:01:00,517 transreid.train INFO: Epoch[116] Iteration[100/186] Loss: 0.038, Acc: 0.999, Base Lr: 3.79e-05
+2026-04-06 17:01:24,232 transreid.train INFO: Epoch[116] Iteration[150/186] Loss: 0.034, Acc: 1.000, Base Lr: 3.79e-05
+2026-04-06 17:01:41,832 transreid.train INFO: Epoch 116 done. Time per batch: 0.545[s] Speed: 117.5[samples/s]
+2026-04-06 17:02:08,092 transreid.train INFO: Epoch[117] Iteration[50/186] Loss: 0.044, Acc: 1.000, Base Lr: 2.83e-05
+2026-04-06 17:02:31,566 transreid.train INFO: Epoch[117] Iteration[100/186] Loss: 0.038, Acc: 1.000, Base Lr: 2.83e-05
+2026-04-06 17:02:59,570 transreid.train INFO: Epoch[117] Iteration[150/186] Loss: 0.034, Acc: 1.000, Base Lr: 2.83e-05
+2026-04-06 17:03:23,268 transreid.train INFO: Epoch 117 done. Time per batch: 0.537[s] Speed: 119.2[samples/s]
+2026-04-06 17:03:49,595 transreid.train INFO: Epoch[118] Iteration[50/186] Loss: 0.042, Acc: 0.999, Base Lr: 2.15e-05
+2026-04-06 17:04:13,172 transreid.train INFO: Epoch[118] Iteration[100/186] Loss: 0.037, Acc: 0.999, Base Lr: 2.15e-05
+2026-04-06 17:04:39,025 transreid.train INFO: Epoch[118] Iteration[150/186] Loss: 0.034, Acc: 0.999, Base Lr: 2.15e-05
+2026-04-06 17:04:55,006 transreid.train INFO: Epoch 118 done. Time per batch: 0.484[s] Speed: 132.2[samples/s]
+2026-04-06 17:05:29,413 transreid.train INFO: Epoch[119] Iteration[50/186] Loss: 0.039, Acc: 1.000, Base Lr: 1.74e-05
+2026-04-06 17:05:53,091 transreid.train INFO: Epoch[119] Iteration[100/186] Loss: 0.036, Acc: 1.000, Base Lr: 1.74e-05
+2026-04-06 17:06:20,661 transreid.train INFO: Epoch[119] Iteration[150/186] Loss: 0.033, Acc: 0.999, Base Lr: 1.74e-05
+2026-04-06 17:06:36,154 transreid.train INFO: Epoch 119 done. Time per batch: 0.494[s] Speed: 129.5[samples/s]
+2026-04-06 17:07:10,706 transreid.train INFO: Epoch[120] Iteration[50/186] Loss: 0.045, Acc: 0.999, Base Lr: 1.60e-05
+2026-04-06 17:07:34,421 transreid.train INFO: Epoch[120] Iteration[100/186] Loss: 0.040, Acc: 1.000, Base Lr: 1.60e-05
+2026-04-06 17:07:59,241 transreid.train INFO: Epoch[120] Iteration[150/186] Loss: 0.036, Acc: 0.999, Base Lr: 1.60e-05
+2026-04-06 17:08:14,755 transreid.train INFO: Epoch 120 done. Time per batch: 0.479[s] Speed: 133.5[samples/s]
+2026-04-06 17:10:36,164 transreid.train INFO: Validation Results - Epoch: 120
+2026-04-06 17:10:36,165 transreid.train INFO: mAP: 89.5%
+2026-04-06 17:10:36,165 transreid.train INFO: CMC curve, Rank-1  :95.5%
+2026-04-06 17:10:36,165 transreid.train INFO: CMC curve, Rank-5  :98.5%
+2026-04-06 17:10:36,165 transreid.train INFO: CMC curve, Rank-10 :99.0%
+2026-04-06 17:10:54,146 transreid.train INFO: Saved new best checkpoint with mAP: 89.5%

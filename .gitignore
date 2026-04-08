@@ -43,3 +43,11 @@ Thumbs.db
 *.backup
 
 .vscode
+__pycache__/
+*.pth
+*.zip
+source_code/runtime_logs/
+source_code/**/best_checkpoint*
+source_code/**/latest_checkpoint*
+source_code/**/best_model*
+source_code/**/latest_model*

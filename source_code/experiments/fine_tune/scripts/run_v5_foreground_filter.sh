@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_ROOT="$(cd "$SCRIPT_DIR/../../../core/transreid_modified" && pwd)"
+CONFIG="$SCRIPT_DIR/../configs/market/v5_foreground_filter.yml"
+DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR/../../../data}"
+PRETRAIN_PATH="${PRETRAIN_PATH:-$SCRIPT_DIR/../../../references/checkpoints/vit_transreid_market.pth}"
+OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/../../../runtime_logs/fine_tune/v5_foreground_filter}"
+DEVICE_ID="${DEVICE_ID:-0}"
+
+cd "$SRC_ROOT"
+python train.py \
+  --config_file "$CONFIG" \
+  MODEL.DEVICE_ID "('$DEVICE_ID')" \
+  MODEL.PRETRAIN_CHOICE "self" \
+  MODEL.PRETRAIN_PATH "('$PRETRAIN_PATH')" \
+  DATASETS.ROOT_DIR "('$DATA_ROOT')" \
+  OUTPUT_DIR "('$OUTPUT_DIR')"
