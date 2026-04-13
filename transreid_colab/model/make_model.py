@@ -47,6 +47,16 @@ def weights_init_classifier(m):
             nn.init.constant_(m.bias, 0.0)
 
 
+def build_deformable_kwargs(cfg, exclude_last=False):
+    return {
+        "deformable_enabled": cfg.MODEL.DEFORMABLE_ATTN.ENABLED,
+        "deformable_start_layer": cfg.MODEL.DEFORMABLE_ATTN.START_LAYER,
+        "deformable_num_points": cfg.MODEL.DEFORMABLE_ATTN.N_POINTS,
+        "deformable_offset_scale": cfg.MODEL.DEFORMABLE_ATTN.OFFSET_SCALE,
+        "deformable_exclude_last": exclude_last,
+    }
+
+
 def enhance_patch_tokens(patch_tokens, patch_weights, topk_ratio, enrich_scale, eps, use_topk_only=False):
     if patch_weights is None:
         return {
@@ -191,7 +201,8 @@ class build_transformer(nn.Module):
         self.base = factory[cfg.MODEL.TRANSFORMER_TYPE](img_size=cfg.INPUT.SIZE_TRAIN, sie_xishu=cfg.MODEL.SIE_COE,
                                                         camera=camera_num, view=view_num, stride_size=cfg.MODEL.STRIDE_SIZE, drop_path_rate=cfg.MODEL.DROP_PATH,
                                                         drop_rate= cfg.MODEL.DROP_OUT,
-                                                        attn_drop_rate=cfg.MODEL.ATT_DROP_RATE)
+                                                        attn_drop_rate=cfg.MODEL.ATT_DROP_RATE,
+                                                        **build_deformable_kwargs(cfg))
         if cfg.MODEL.TRANSFORMER_TYPE == 'deit_small_patch16_224_TransReID':
             self.in_planes = 384
         self.patch_grid = (self.base.patch_embed.num_y, self.base.patch_embed.num_x)
@@ -430,7 +441,18 @@ class build_transformer_local(nn.Module):
         else:
             view_num = 0
 
-        self.base = factory[cfg.MODEL.TRANSFORMER_TYPE](img_size=cfg.INPUT.SIZE_TRAIN, sie_xishu=cfg.MODEL.SIE_COE, local_feature=cfg.MODEL.JPM, camera=camera_num, view=view_num, stride_size=cfg.MODEL.STRIDE_SIZE, drop_path_rate=cfg.MODEL.DROP_PATH)
+        self.base = factory[cfg.MODEL.TRANSFORMER_TYPE](
+            img_size=cfg.INPUT.SIZE_TRAIN,
+            sie_xishu=cfg.MODEL.SIE_COE,
+            local_feature=cfg.MODEL.JPM,
+            camera=camera_num,
+            view=view_num,
+            stride_size=cfg.MODEL.STRIDE_SIZE,
+            drop_path_rate=cfg.MODEL.DROP_PATH,
+            drop_rate=cfg.MODEL.DROP_OUT,
+            attn_drop_rate=cfg.MODEL.ATT_DROP_RATE,
+            **build_deformable_kwargs(cfg, exclude_last=True)
+        )
         self.patch_grid = (self.base.patch_embed.num_y, self.base.patch_embed.num_x)
 
         if pretrain_choice == 'imagenet':

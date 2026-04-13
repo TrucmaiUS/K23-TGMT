@@ -164,14 +164,134 @@ class Attention(nn.Module):
         return x
 
 
+class DeformableAttention(nn.Module):
+    def __init__(
+        self,
+        dim,
+        num_heads=8,
+        qkv_bias=False,
+        qk_scale=None,
+        attn_drop=0.,
+        proj_drop=0.,
+        patch_grid=(16, 8),
+        num_points=4,
+        offset_scale=2.0,
+    ):
+        super().__init__()
+        if patch_grid is None:
+            raise ValueError('patch_grid is required for deformable attention.')
+
+        self.num_heads = num_heads
+        self.num_points = num_points
+        self.patch_grid = patch_grid
+        self.offset_scale = offset_scale
+        head_dim = dim // num_heads
+        self.head_dim = head_dim
+        self.scale = qk_scale or head_dim ** -0.5
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.offset_proj = nn.Linear(dim, num_heads * num_points * 2)
+        self.sampling_weight_proj = nn.Linear(dim, num_heads * num_points)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+        ref_points = self._build_reference_points(*patch_grid)
+        self.register_buffer('reference_points', ref_points)
+
+    @staticmethod
+    def _build_reference_points(height, width):
+        y = (torch.arange(height, dtype=torch.float32) + 0.5) / height
+        x = (torch.arange(width, dtype=torch.float32) + 0.5) / width
+        try:
+            yy, xx = torch.meshgrid(y, x, indexing='ij')
+        except TypeError:
+            yy, xx = torch.meshgrid(y, x)
+        ref_points = torch.stack((xx, yy), dim=-1).reshape(1, height * width, 1, 1, 2)
+        return ref_points
+
+    def forward(self, x):
+        B, N, C = x.shape
+        patch_count = self.patch_grid[0] * self.patch_grid[1]
+        if N != patch_count + 1:
+            raise ValueError(
+                'Token count {} does not match deformable patch grid {}x{}.'.format(
+                    N, self.patch_grid[0], self.patch_grid[1]
+                )
+            )
+
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        cls_q = q[:, :, :1]
+        cls_attn = (cls_q @ k.transpose(-2, -1)) * self.scale
+        cls_attn = cls_attn.softmax(dim=-1)
+        cls_attn = self.attn_drop(cls_attn)
+        cls_out = (cls_attn @ v).transpose(1, 2).reshape(B, 1, C)
+
+        patch_tokens = x[:, 1:]
+        patch_v = v[:, :, 1:].reshape(B, self.num_heads, self.patch_grid[0], self.patch_grid[1], self.head_dim)
+
+        offsets = self.offset_proj(patch_tokens).reshape(B, patch_count, self.num_heads, self.num_points, 2)
+        sampling_weights = self.sampling_weight_proj(patch_tokens).reshape(
+            B, patch_count, self.num_heads, self.num_points
+        )
+        sampling_weights = F.softmax(sampling_weights, dim=-1)
+        sampling_weights = self.attn_drop(sampling_weights)
+
+        offset_normalizer = patch_tokens.new_tensor([self.patch_grid[1], self.patch_grid[0]]).view(1, 1, 1, 1, 2)
+        sampling_locations = self.reference_points.to(device=x.device, dtype=x.dtype)
+        sampling_locations = sampling_locations + torch.tanh(offsets) * (self.offset_scale / offset_normalizer)
+        sampling_locations = sampling_locations.clamp(0.0, 1.0)
+        sampling_grid = sampling_locations * 2.0 - 1.0
+
+        value_map = patch_v.permute(0, 1, 4, 2, 3).reshape(
+            B * self.num_heads, self.head_dim, self.patch_grid[0], self.patch_grid[1]
+        )
+        sampling_grid = sampling_grid.permute(0, 2, 1, 3, 4).reshape(
+            B * self.num_heads, patch_count, self.num_points, 2
+        )
+        sampled_values = F.grid_sample(
+            value_map,
+            sampling_grid,
+            mode='bilinear',
+            padding_mode='border',
+            align_corners=False,
+        )
+        sampled_values = sampled_values.reshape(B, self.num_heads, self.head_dim, patch_count, self.num_points)
+        sampled_values = sampled_values.permute(0, 3, 1, 4, 2)
+
+        patch_out = (sampling_weights.unsqueeze(-1) * sampled_values).sum(dim=3)
+        patch_out = patch_out.reshape(B, patch_count, C)
+
+        x = torch.cat((cls_out, patch_out), dim=1)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+
 class Block(nn.Module):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, use_deformable=False,
+                 patch_grid=None, deformable_num_points=4, deformable_offset_scale=2.0):
         super().__init__()
         self.norm1 = norm_layer(dim)
-        self.attn = Attention(
-            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
+        if use_deformable:
+            self.attn = DeformableAttention(
+                dim,
+                num_heads=num_heads,
+                qkv_bias=qkv_bias,
+                qk_scale=qk_scale,
+                attn_drop=attn_drop,
+                proj_drop=drop,
+                patch_grid=patch_grid,
+                num_points=deformable_num_points,
+                offset_scale=deformable_offset_scale,
+            )
+        else:
+            self.attn = Attention(
+                dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -293,11 +413,15 @@ class TransReID(nn.Module):
     """
     def __init__(self, img_size=224, patch_size=16, stride_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0., camera=0, view=0,
-                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu =1.0):
+                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu =1.0,
+                 deformable_enabled=False, deformable_start_layer=8, deformable_num_points=4,
+                 deformable_offset_scale=2.0, deformable_exclude_last=False):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.local_feature = local_feature
+        img_size = to_2tuple(img_size)
+        patch_size = to_2tuple(patch_size)
         if hybrid_backbone is not None:
             self.patch_embed = HybridEmbed(
                 hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
@@ -307,6 +431,10 @@ class TransReID(nn.Module):
                 embed_dim=embed_dim)
 
         num_patches = self.patch_embed.num_patches
+        if hasattr(self.patch_embed, 'num_y') and hasattr(self.patch_embed, 'num_x'):
+            patch_grid = (self.patch_embed.num_y, self.patch_embed.num_x)
+        else:
+            patch_grid = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
@@ -333,6 +461,15 @@ class TransReID(nn.Module):
         print('using drop_out rate is : {}'.format(drop_rate))
         print('using attn_drop_out rate is : {}'.format(attn_drop_rate))
         print('using drop_path rate is : {}'.format(drop_path_rate))
+        if deformable_enabled:
+            start_layer = max(0, min(depth - 1, deformable_start_layer))
+            print(
+                'using deformable attention from block {} with {} sampling points and offset scale {}'.format(
+                    start_layer, deformable_num_points, deformable_offset_scale
+                )
+            )
+        else:
+            start_layer = depth
 
         self.pos_drop = nn.Dropout(p=drop_rate)
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -340,7 +477,10 @@ class TransReID(nn.Module):
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
+                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
+                use_deformable=deformable_enabled and i >= start_layer and not (deformable_exclude_last and i == depth - 1),
+                patch_grid=patch_grid,
+                deformable_num_points=deformable_num_points, deformable_offset_scale=deformable_offset_scale)
             for i in range(depth)])
 
         self.norm = norm_layer(embed_dim)
