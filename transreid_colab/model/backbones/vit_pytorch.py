@@ -512,7 +512,7 @@ class TransReID(nn.Module):
         self.num_classes = num_classes
         self.fc = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-    def forward_features(self, x, camera_id, view_id, return_all_tokens=False):
+    def forward_features(self, x, camera_id, view_id, return_all_tokens=False, return_pre_final_tokens=False):
         B = x.shape[0]
         x = self.patch_embed(x)
 
@@ -536,18 +536,33 @@ class TransReID(nn.Module):
             return x
 
         else:
-            for blk in self.blocks:
+            pre_final_tokens = None
+            for block_index, blk in enumerate(self.blocks):
+                if return_pre_final_tokens and block_index == len(self.blocks) - 1:
+                    pre_final_tokens = x
                 x = blk(x)
 
             x = self.norm(x)
 
             if return_all_tokens:
+                if return_pre_final_tokens:
+                    if pre_final_tokens is None:
+                        pre_final_tokens = x
+                    else:
+                        pre_final_tokens = self.norm(pre_final_tokens)
+                    return x, pre_final_tokens
                 return x
 
             return x[:, 0]
 
-    def forward(self, x, cam_label=None, view_label=None, return_all_tokens=False):
-        x = self.forward_features(x, cam_label, view_label, return_all_tokens=return_all_tokens)
+    def forward(self, x, cam_label=None, view_label=None, return_all_tokens=False, return_pre_final_tokens=False):
+        x = self.forward_features(
+            x,
+            cam_label,
+            view_label,
+            return_all_tokens=return_all_tokens,
+            return_pre_final_tokens=return_pre_final_tokens
+        )
         return x
 
     def load_param(self, model_path):

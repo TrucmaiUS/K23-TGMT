@@ -129,7 +129,13 @@ def do_train(cfg,
         evaluator.reset()
         scheduler.step(epoch)
         model.train()
-        for n_iter, (img, vid, target_cam, target_view) in enumerate(train_loader):
+        for n_iter, batch in enumerate(train_loader):
+            if len(batch) == 5:
+                img, vid, target_cam, target_view, semantic_masks = batch
+                semantic_masks = semantic_masks.to(device)
+            else:
+                img, vid, target_cam, target_view = batch
+                semantic_masks = None
             optimizer.zero_grad()
             optimizer_center.zero_grad()
             img = img.to(device)
@@ -137,12 +143,26 @@ def do_train(cfg,
             target_cam = target_cam.to(device)
             target_view = target_view.to(device)
             with amp.autocast(enabled=device.type == "cuda"):
-                outputs = model(img, target, cam_label=target_cam, view_label=target_view, epoch=epoch)
+                outputs = model(
+                    img,
+                    target,
+                    cam_label=target_cam,
+                    view_label=target_view,
+                    epoch=epoch,
+                    semantic_masks=semantic_masks
+                )
                 loss = loss_fn(outputs, target, target_cam)
 
                 if cfg.MODEL.OCC_AUG.ENABLED and epoch >= cfg.MODEL.OCC_AUG.START_EPOCH:
                     occ_img = apply_synthetic_occlusion(img, cfg)
-                    occ_outputs = model(occ_img, target, cam_label=target_cam, view_label=target_view, epoch=epoch)
+                    occ_outputs = model(
+                        occ_img,
+                        target,
+                        cam_label=target_cam,
+                        view_label=target_view,
+                        epoch=epoch,
+                        semantic_masks=semantic_masks
+                    )
                     occ_loss = loss_fn(occ_outputs, target, target_cam)
                     consistency_loss = 1.0 - F.cosine_similarity(
                         extract_global_feature(outputs),

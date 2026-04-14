@@ -2,7 +2,6 @@ from PIL import Image, ImageFile
 
 from torch.utils.data import Dataset
 import os.path as osp
-import random
 import torch
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -21,6 +20,20 @@ def read_image(img_path):
             print("IOError incurred when reading '{}'. Will redo. Don't worry. Just chill.".format(img_path))
             pass
     return img
+
+
+def read_semantic_mask(mask_path):
+    got_mask = False
+    if not osp.exists(mask_path):
+        raise IOError("{} does not exist".format(mask_path))
+    while not got_mask:
+        try:
+            semantic_mask = Image.open(mask_path)
+            got_mask = True
+        except IOError:
+            print("IOError incurred when reading '{}'. Will redo. Don't worry. Just chill.".format(mask_path))
+            pass
+    return semantic_mask
 
 
 class BaseDataset(object):
@@ -69,9 +82,11 @@ class BaseImageDataset(BaseDataset):
 
 
 class ImageDataset(Dataset):
-    def __init__(self, dataset, transform=None):
+    def __init__(self, dataset, transform=None, dataset_root=None, semantic_cfg=None):
         self.dataset = dataset
         self.transform = transform
+        self.dataset_root = dataset_root
+        self.semantic_cfg = semantic_cfg
 
     def __len__(self):
         return len(self.dataset)
@@ -79,8 +94,30 @@ class ImageDataset(Dataset):
     def __getitem__(self, index):
         img_path, pid, camid, trackid = self.dataset[index]
         img = read_image(img_path)
+        semantic_mask = None
+
+        if self.semantic_cfg is not None:
+            semantic_mask = read_semantic_mask(self._get_semantic_mask_path(img_path))
 
         if self.transform is not None:
-            img = self.transform(img)
+            try:
+                img, semantic_mask = self.transform(img, semantic_mask)
+            except TypeError:
+                img = self.transform(img)
 
-        return img, pid, camid, trackid,img_path.split('/')[-1]
+        if semantic_mask is not None:
+            return img, pid, camid, trackid, img_path.split('/')[-1], semantic_mask
+
+        return img, pid, camid, trackid, img_path.split('/')[-1]
+
+    def _get_semantic_mask_path(self, img_path):
+        if self.dataset_root is None:
+            raise ValueError('dataset_root is required when semantic alignment is enabled.')
+
+        relative_path = osp.relpath(img_path, self.dataset_root)
+        stem, _ = osp.splitext(relative_path)
+        return osp.join(
+            self.dataset_root,
+            self.semantic_cfg["mask_dir"],
+            stem + self.semantic_cfg["mask_ext"]
+        )

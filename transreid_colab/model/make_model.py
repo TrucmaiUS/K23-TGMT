@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from .backbones.resnet import ResNet, Bottleneck
 import copy
 from .backbones.vit_pytorch import vit_base_patch16_224_TransReID, vit_small_patch16_224_TransReID, deit_small_patch16_224_TransReID
@@ -97,6 +98,79 @@ def enhance_patch_tokens(patch_tokens, patch_weights, topk_ratio, enrich_scale, 
     }
 
 
+class SemanticAlignmentHead(nn.Module):
+    def __init__(self, dim, patch_grid, cfg):
+        super().__init__()
+        self.num_parts = cfg.MODEL.SEM_ALIGN.NUM_PARTS
+        self.patch_grid = patch_grid
+        self.visible_threshold = cfg.MODEL.SEM_ALIGN.VISIBLE_THRESHOLD
+        self.eps = cfg.MODEL.SEM_ALIGN.EPS
+        self.detach_reference = cfg.MODEL.SEM_ALIGN.DETACH_REFERENCE
+        score_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.SCORE_HIDDEN_DIM_RATIO)
+        ref_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.REF_HIDDEN_DIM_RATIO)
+
+        self.part_score_head = nn.Sequential(
+            nn.Linear(dim, score_hidden_dim),
+            nn.GELU(),
+            nn.Linear(score_hidden_dim, self.num_parts),
+            nn.Softplus()
+        )
+        self.main_proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim)
+        )
+        self.ref_proj = nn.Sequential(
+            nn.Linear(dim, ref_hidden_dim),
+            nn.GELU(),
+            nn.Linear(ref_hidden_dim, dim),
+            nn.LayerNorm(dim)
+        )
+
+        self.part_score_head.apply(weights_init_kaiming)
+        self.main_proj.apply(weights_init_kaiming)
+        self.ref_proj.apply(weights_init_kaiming)
+
+    def _build_part_masks(self, semantic_masks, device):
+        semantic_masks = semantic_masks.to(device=device, dtype=torch.float32).unsqueeze(1)
+        semantic_masks = F.interpolate(semantic_masks, size=self.patch_grid, mode='nearest').long().squeeze(1)
+        part_masks = [
+            (semantic_masks == part_index).float()
+            for part_index in range(1, self.num_parts + 1)
+        ]
+        part_masks = torch.stack(part_masks, dim=1).flatten(2)
+        visible_mask = part_masks.sum(dim=-1) >= self.visible_threshold
+        return part_masks, visible_mask
+
+    def _pool_main_tokens(self, patch_tokens, part_masks):
+        patch_scores = self.part_score_head(patch_tokens).permute(0, 2, 1) + self.eps
+        part_weights = part_masks * patch_scores
+        semantic_tokens = torch.einsum('bkn,bnd->bkd', part_weights, patch_tokens)
+        semantic_tokens = semantic_tokens / (part_weights.sum(dim=-1, keepdim=True) + self.eps)
+        normalized_weights = part_weights / (part_weights.sum(dim=-1, keepdim=True) + self.eps)
+        return semantic_tokens, normalized_weights
+
+    def _pool_reference_tokens(self, patch_tokens, part_masks):
+        part_weights = part_masks
+        reference_tokens = torch.einsum('bkn,bnd->bkd', part_weights, patch_tokens)
+        reference_tokens = reference_tokens / (part_weights.sum(dim=-1, keepdim=True) + self.eps)
+        return reference_tokens
+
+    def forward(self, patch_tokens, reference_patch_tokens, semantic_masks):
+        part_masks, visible_mask = self._build_part_masks(semantic_masks, patch_tokens.device)
+        semantic_tokens, semantic_pool_weights = self._pool_main_tokens(patch_tokens, part_masks)
+
+        if self.detach_reference:
+            reference_patch_tokens = reference_patch_tokens.detach()
+        semantic_reference_tokens = self._pool_reference_tokens(reference_patch_tokens, part_masks)
+
+        return {
+            "semantic_tokens": self.main_proj(semantic_tokens),
+            "semantic_reference_tokens": self.ref_proj(semantic_reference_tokens),
+            "semantic_visible_mask": visible_mask.float(),
+            "semantic_pool_weights": semantic_pool_weights,
+        }
+
+
 class Backbone(nn.Module):
     def __init__(self, num_classes, cfg):
         super(Backbone, self).__init__()
@@ -178,8 +252,9 @@ class build_transformer(nn.Module):
         self.enable_patch_weight = cfg.MODEL.VIS_WEIGHT.ENABLED
         self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
         self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
+        self.enable_sem_align = cfg.MODEL.SEM_ALIGN.ENABLED
         self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
-        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
         self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
@@ -235,6 +310,11 @@ class build_transformer(nn.Module):
         self.bottleneck = nn.BatchNorm1d(self.in_planes)
         self.bottleneck.bias.requires_grad_(False)
         self.bottleneck.apply(weights_init_kaiming)
+
+        if self.enable_sem_align:
+            self.semantic_align_head = SemanticAlignmentHead(self.in_planes, self.patch_grid, cfg)
+        else:
+            self.semantic_align_head = None
 
         if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
@@ -301,7 +381,16 @@ class build_transformer(nn.Module):
             local_feats.append(region_tokens.mean(dim=1))
         return local_feats
 
-    def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False):
+    def _compute_semantic_outputs(self, patch_tokens, reference_patch_tokens, semantic_masks):
+        if not self.enable_sem_align:
+            return {}
+        if semantic_masks is None:
+            if self.training:
+                raise ValueError('Semantic alignment is enabled but semantic masks were not provided by the dataloader.')
+            return {}
+        return self.semantic_align_head(patch_tokens, reference_patch_tokens, semantic_masks)
+
+    def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False, semantic_masks=None):
         if not self.token_branch_enabled:
             global_feat = self.base(x, cam_label=cam_label, view_label=view_label)
             feat = self.bottleneck(global_feat)
@@ -314,7 +403,18 @@ class build_transformer(nn.Module):
                 return feat
             return global_feat
 
-        token_features = self.base(x, cam_label=cam_label, view_label=view_label, return_all_tokens=True)
+        if self.enable_sem_align:
+            token_features, reference_features = self.base(
+                x,
+                cam_label=cam_label,
+                view_label=view_label,
+                return_all_tokens=True,
+                return_pre_final_tokens=True
+            )
+            reference_patch_tokens = reference_features[:, 1:]
+        else:
+            token_features = self.base(x, cam_label=cam_label, view_label=view_label, return_all_tokens=True)
+            reference_patch_tokens = None
         cls_token = token_features[:, 0]
         patch_tokens = token_features[:, 1:]
         patch_weights = self._get_patch_weights(patch_tokens, epoch)
@@ -360,6 +460,8 @@ class build_transformer(nn.Module):
                     self.classifier_low(local_bn_feats[2])
                 ]
 
+        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
+
         if self.training:
             outputs = {
                 "global_feat": global_feat,
@@ -375,11 +477,12 @@ class build_transformer(nn.Module):
                 "selection_mask": selection_mask,
                 "selected_indices": selected_indices,
             }
+            outputs.update(semantic_outputs)
             return outputs
 
         retrieval_feat = global_bn_feat if self.neck_feat == 'after' else global_feat
         if return_feature_dict:
-            return {
+            feature_dict = {
                 "retrieval_feat": retrieval_feat,
                 "global_feat": global_feat,
                 "global_bn_feat": global_bn_feat,
@@ -392,6 +495,9 @@ class build_transformer(nn.Module):
                 "selection_mask": selection_mask,
                 "selected_indices": selected_indices,
             }
+            if semantic_outputs:
+                feature_dict.update(semantic_outputs)
+            return feature_dict
         return retrieval_feat
 
     def load_param(self, trained_path):
@@ -420,8 +526,9 @@ class build_transformer_local(nn.Module):
         self.enable_patch_weight = cfg.MODEL.VIS_WEIGHT.ENABLED
         self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
         self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
+        self.enable_sem_align = cfg.MODEL.SEM_ALIGN.ENABLED
         self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
-        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
         self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
@@ -516,6 +623,11 @@ class build_transformer_local(nn.Module):
         self.bottleneck_4.bias.requires_grad_(False)
         self.bottleneck_4.apply(weights_init_kaiming)
 
+        if self.enable_sem_align:
+            self.semantic_align_head = SemanticAlignmentHead(self.in_planes, self.patch_grid, cfg)
+        else:
+            self.semantic_align_head = None
+
         if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
             self.patch_weight_head = nn.Sequential(
@@ -584,9 +696,19 @@ class build_transformer_local(nn.Module):
             local_feats.append(region_tokens.mean(dim=1))
         return local_feats
 
-    def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False):  # label is unused if self.cos_layer == 'no'
+    def _compute_semantic_outputs(self, patch_tokens, reference_patch_tokens, semantic_masks):
+        if not self.enable_sem_align:
+            return {}
+        if semantic_masks is None:
+            if self.training:
+                raise ValueError('Semantic alignment is enabled but semantic masks were not provided by the dataloader.')
+            return {}
+        return self.semantic_align_head(patch_tokens, reference_patch_tokens, semantic_masks)
+
+    def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False, semantic_masks=None):  # label is unused if self.cos_layer == 'no'
 
         features = self.base(x, cam_label=cam_label, view_label=view_label)
+        reference_patch_tokens = self.base.norm(features)[:, 1:] if self.enable_sem_align else None
 
         # global branch
         b1_feat = self.b1(features) # [64, 129, 768]
@@ -667,6 +789,8 @@ class build_transformer_local(nn.Module):
                     self.classifier_low(local_group_bn_feats[2])
                 ]
 
+        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
+
         if self.training:
             if self.ID_LOSS_TYPE in ('arcface', 'cosface', 'amsoftmax', 'circle'):
                 cls_score = self.classifier(feat, label)
@@ -682,7 +806,7 @@ class build_transformer_local(nn.Module):
                 jpm_feats = [weighted_global_feat, local_feat_1, local_feat_2, local_feat_3, local_feat_4]
 
             if self.token_branch_enabled:
-                return {
+                outputs = {
                     "global_feat": weighted_global_feat,
                     "global_bn_feat": feat,
                     "global_logits": cls_score,
@@ -700,6 +824,8 @@ class build_transformer_local(nn.Module):
                     "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
                     "jpm_local_bn_feats": [local_feat_1_bn, local_feat_2_bn, local_feat_3_bn, local_feat_4_bn],
                 }
+                outputs.update(semantic_outputs)
+                return outputs
 
             return jpm_scores, jpm_feats  # global feature for triplet loss
         else:
@@ -718,7 +844,7 @@ class build_transformer_local(nn.Module):
                 else:
                     retrieval_feat = feat if self.neck_feat == 'after' else weighted_global_feat
                 if return_feature_dict:
-                    return {
+                    feature_dict = {
                         "retrieval_feat": retrieval_feat,
                         "global_only_feat": feat if self.neck_feat == 'after' else weighted_global_feat,
                         "global_feat": weighted_global_feat,
@@ -734,6 +860,9 @@ class build_transformer_local(nn.Module):
                         "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
                         "jpm_local_bn_feats": [local_feat_1_bn, local_feat_2_bn, local_feat_3_bn, local_feat_4_bn],
                     }
+                    if semantic_outputs:
+                        feature_dict.update(semantic_outputs)
+                    return feature_dict
                 return retrieval_feat
 
             if self.neck_feat == 'after':

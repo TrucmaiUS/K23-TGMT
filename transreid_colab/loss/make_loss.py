@@ -45,6 +45,29 @@ def make_loss(cfg, num_classes):    # modified by gu
             return xent(logits, target)
         return F.cross_entropy(logits, target)
 
+    def semantic_alignment_losses(outputs):
+        semantic_tokens = outputs.get("semantic_tokens")
+        semantic_reference_tokens = outputs.get("semantic_reference_tokens")
+        visible_mask = outputs.get("semantic_visible_mask")
+        if semantic_tokens is None or semantic_reference_tokens is None or visible_mask is None:
+            zero = outputs["global_feat"].new_tensor(0.0)
+            return zero, zero
+
+        semantic_tokens = F.normalize(semantic_tokens, dim=-1)
+        semantic_reference_tokens = F.normalize(semantic_reference_tokens, dim=-1)
+        visible_mask = visible_mask.float()
+
+        positive_distance = 1.0 - (semantic_tokens * semantic_reference_tokens).sum(dim=-1)
+        align_loss = (positive_distance * visible_mask).sum() / (visible_mask.sum() + cfg.MODEL.SEM_ALIGN.EPS)
+
+        similarity_matrix = torch.matmul(semantic_tokens, semantic_tokens.transpose(1, 2))
+        pair_mask = visible_mask.unsqueeze(2) * visible_mask.unsqueeze(1)
+        eye_mask = torch.eye(similarity_matrix.size(-1), device=similarity_matrix.device).unsqueeze(0)
+        pair_mask = pair_mask * (1.0 - eye_mask)
+        separation_loss = F.relu(similarity_matrix - cfg.MODEL.SEM_ALIGN.SEP_MARGIN)
+        separation_loss = (separation_loss * pair_mask).sum() / (pair_mask.sum() + cfg.MODEL.SEM_ALIGN.EPS)
+        return align_loss, separation_loss
+
     def legacy_softmax_triplet_loss(score, feat, target):
         if cfg.MODEL.IF_LABELSMOOTH == 'on':
             if isinstance(score, list):
@@ -87,6 +110,10 @@ def make_loss(cfg, num_classes):    # modified by gu
         patch_weights = outputs.get("patch_weights")
         if patch_weights is not None:
             total_loss = total_loss + cfg.MODEL.VIS_WEIGHT.LAMBDA_REG * patch_weight_regularizer(patch_weights)
+
+        align_loss, separation_loss = semantic_alignment_losses(outputs)
+        total_loss = total_loss + cfg.MODEL.SEM_ALIGN.LAMBDA_ALIGN * align_loss
+        total_loss = total_loss + cfg.MODEL.SEM_ALIGN.LAMBDA_SEP * separation_loss
 
         return total_loss
 
