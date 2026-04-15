@@ -41,6 +41,19 @@ def _nearest_mode():
     return Image.NEAREST
 
 
+def _swap_flipped_semantic_labels(mask_array, flip_label_pairs):
+    if not flip_label_pairs:
+        return mask_array
+
+    swapped_mask = mask_array.copy()
+    for left_label, right_label in flip_label_pairs:
+        left_region = mask_array == left_label
+        right_region = mask_array == right_label
+        swapped_mask[left_region] = right_label
+        swapped_mask[right_region] = left_label
+    return swapped_mask
+
+
 class ReIDPairTransform(object):
     def __init__(self, cfg, is_train=True):
         self.is_train = is_train
@@ -57,6 +70,11 @@ class ReIDPairTransform(object):
         ) if is_train else None
         self.image_interp = _bicubic_mode()
         self.mask_interp = _nearest_mode()
+        self.flip_label_pairs = [
+            (int(pair[0]), int(pair[1]))
+            for pair in cfg.MODEL.SEM_ALIGN.FLIP_LABEL_PAIRS
+            if len(pair) == 2
+        ]
 
     def __call__(self, img, semantic_mask=None):
         img = TF.resize(img, self.size, interpolation=self.image_interp)
@@ -68,6 +86,10 @@ class ReIDPairTransform(object):
                 img = TF.hflip(img)
                 if semantic_mask is not None:
                     semantic_mask = TF.hflip(semantic_mask)
+                    if self.flip_label_pairs:
+                        flipped_mask = np.array(semantic_mask, dtype=np.uint8)
+                        flipped_mask = _swap_flipped_semantic_labels(flipped_mask, self.flip_label_pairs)
+                        semantic_mask = Image.fromarray(flipped_mask, mode='L')
 
             img = TF.pad(img, self.padding)
             if semantic_mask is not None:

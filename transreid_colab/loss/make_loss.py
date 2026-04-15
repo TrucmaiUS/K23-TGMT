@@ -60,13 +60,24 @@ def make_loss(cfg, num_classes):    # modified by gu
         positive_distance = 1.0 - (semantic_tokens * semantic_reference_tokens).sum(dim=-1)
         align_loss = (positive_distance * visible_mask).sum() / (visible_mask.sum() + cfg.MODEL.SEM_ALIGN.EPS)
 
-        similarity_matrix = torch.matmul(semantic_tokens, semantic_tokens.transpose(1, 2))
-        pair_mask = visible_mask.unsqueeze(2) * visible_mask.unsqueeze(1)
-        eye_mask = torch.eye(similarity_matrix.size(-1), device=similarity_matrix.device).unsqueeze(0)
-        pair_mask = pair_mask * (1.0 - eye_mask)
-        separation_loss = F.relu(similarity_matrix - cfg.MODEL.SEM_ALIGN.SEP_MARGIN)
-        separation_loss = (separation_loss * pair_mask).sum() / (pair_mask.sum() + cfg.MODEL.SEM_ALIGN.EPS)
-        return align_loss, separation_loss
+        temperature = max(cfg.MODEL.SEM_ALIGN.MATCH_TEMPERATURE, cfg.MODEL.SEM_ALIGN.EPS)
+        similarity_matrix = torch.matmul(semantic_tokens, semantic_reference_tokens.transpose(1, 2)) / temperature
+        invalid_part_mask = (visible_mask < 0.5).unsqueeze(1)
+        targets = torch.arange(similarity_matrix.size(-1), device=similarity_matrix.device)
+        targets = targets.unsqueeze(0).expand(similarity_matrix.size(0), -1)
+
+        row_logits = similarity_matrix.masked_fill(invalid_part_mask, -1e4)
+        row_log_prob = F.log_softmax(row_logits, dim=-1)
+        row_loss = -row_log_prob.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+        row_loss = (row_loss * visible_mask).sum() / (visible_mask.sum() + cfg.MODEL.SEM_ALIGN.EPS)
+
+        col_logits = similarity_matrix.transpose(1, 2).masked_fill(invalid_part_mask, -1e4)
+        col_log_prob = F.log_softmax(col_logits, dim=-1)
+        col_loss = -col_log_prob.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+        col_loss = (col_loss * visible_mask).sum() / (visible_mask.sum() + cfg.MODEL.SEM_ALIGN.EPS)
+
+        part_match_loss = 0.5 * (row_loss + col_loss)
+        return align_loss, part_match_loss
 
     def legacy_softmax_triplet_loss(score, feat, target):
         if cfg.MODEL.IF_LABELSMOOTH == 'on':

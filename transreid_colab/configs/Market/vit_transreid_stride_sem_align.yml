@@ -20,18 +20,20 @@ MODEL:
     MASK_EXT: '.png'
     SCORE_HIDDEN_DIM_RATIO: 4
     REF_HIDDEN_DIM_RATIO: 2
-    LAMBDA_ALIGN: 0.3
-    LAMBDA_SEP: 0.1
+    LAMBDA_ALIGN: 0.2
+    LAMBDA_SEP: 0.05
     SEP_MARGIN: 0.2
+    MATCH_TEMPERATURE: 0.07
     EPS: 1e-6
     VISIBLE_THRESHOLD: 1.0
     DETACH_REFERENCE: True
+    FLIP_LABEL_PAIRS: []  # set [[3, 4], [5, 6]] for left/right-aware presets such as lip6 or atr6
 
 INPUT:
   SIZE_TRAIN: [256, 128]
   SIZE_TEST: [256, 128]
   PROB: 0.5 # random horizontal flip
-  RE_PROB: 0.5 # random erasing
+  RE_PROB: 0.0 # keep parsing masks consistent with image content in the first semantic-guided version
   PADDING: 10
   PIXEL_MEAN: [0.5, 0.5, 0.5]
   PIXEL_STD: [0.5, 0.5, 0.5]

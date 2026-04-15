@@ -107,7 +107,6 @@ class SemanticAlignmentHead(nn.Module):
         self.eps = cfg.MODEL.SEM_ALIGN.EPS
         self.detach_reference = cfg.MODEL.SEM_ALIGN.DETACH_REFERENCE
         score_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.SCORE_HIDDEN_DIM_RATIO)
-        ref_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.REF_HIDDEN_DIM_RATIO)
 
         self.part_score_head = nn.Sequential(
             nn.Linear(dim, score_hidden_dim),
@@ -119,16 +118,10 @@ class SemanticAlignmentHead(nn.Module):
             nn.Linear(dim, dim),
             nn.LayerNorm(dim)
         )
-        self.ref_proj = nn.Sequential(
-            nn.Linear(dim, ref_hidden_dim),
-            nn.GELU(),
-            nn.Linear(ref_hidden_dim, dim),
-            nn.LayerNorm(dim)
-        )
+        self.ref_proj = nn.LayerNorm(dim, elementwise_affine=False)
 
         self.part_score_head.apply(weights_init_kaiming)
         self.main_proj.apply(weights_init_kaiming)
-        self.ref_proj.apply(weights_init_kaiming)
 
     def _build_part_masks(self, semantic_masks, device):
         semantic_masks = semantic_masks.to(device=device, dtype=torch.float32).unsqueeze(1)

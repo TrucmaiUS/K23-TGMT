@@ -22,6 +22,14 @@ PRESET_MAPPINGS = {
         5: [12, 9],              # left leg + left shoe
         6: [13, 10],             # right leg + right shoe
     },
+    "fashn6": {
+        1: [1, 2, 9, 11, 17],    # head: face, hair, hat, glasses, jewelry
+        2: [3, 4, 5, 6, 7, 10, 16],  # torso + clothing around torso
+        3: [12],                 # arms
+        4: [13],                 # hands
+        5: [14],                 # legs
+        6: [15],                 # feet
+    },
 }
 
 
