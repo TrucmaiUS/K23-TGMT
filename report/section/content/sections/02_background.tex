@@ -1,0 +1,54 @@
+\newpage
+\section{Cơ sở lý thuyết}
+
+\subsection{Mô hình khí quyển của ảnh có haze}
+
+Nền tảng vật lý thường dùng cho bài toán dehazing mô tả ảnh quan sát \(I(x)\) tại vị trí \(x\) như sau:
+\begin{equation}
+I(x) = J(x)t(x) + A\left(1 - t(x)\right),
+\end{equation}
+trong đó \(J(x)\) là ảnh cảnh thật cần khôi phục, \(A\) là ánh sáng khí quyển toàn cục và \(t(x)\) là transmission, biểu diễn phần năng lượng ánh sáng từ cảnh đi tới camera mà không bị tán xạ.
+
+Phương trình trên có thể hiểu như tổng của hai thành phần. Thành phần thứ nhất, \(J(x)t(x)\), là tín hiệu cảnh bị suy hao theo khoảng cách. Thành phần thứ hai, \(A(1 - t(x))\), là \textit{airlight}, tức ánh sáng của môi trường khí quyển cộng thêm vào ảnh quan sát. Khi vật thể càng xa camera thì transmission càng nhỏ, thành phần cảnh thật càng yếu đi và ảnh càng bị chi phối bởi màu của khí quyển.
+
+Trong môi trường khí quyển đồng nhất, transmission thường được mô tả theo độ sâu \(d(x)\):
+\begin{equation}
+t(x) = e^{-\beta d(x)},
+\end{equation}
+với \(\beta\) là hệ số tán xạ của môi trường. Công thức này cho thấy dehazing là bài toán khó vì biến độ sâu \(d(x)\) không quan sát trực tiếp được từ một ảnh đơn.
+
+\subsection{Dark Channel Prior}
+
+Dark Channel Prior được xây dựng từ một quan sát thống kê quan trọng trên ảnh ngoài trời không có haze: trong đa số patch không thuộc vùng trời, thường tồn tại ít nhất một điểm ảnh có giá trị rất thấp ở một trong ba kênh màu. Từ đó, với ảnh \(J\), dark channel được định nghĩa bởi:
+\begin{equation}
+J^{dark}(x) = \min_{y \in \Omega(x)} \left( \min_{c \in \{r,g,b\}} J^c(y) \right),
+\end{equation}
+trong đó \(\Omega(x)\) là patch lân cận của điểm \(x\), còn \(J^c(y)\) là cường độ ở kênh màu \(c\) tại vị trí \(y\).
+
+Phép toán này gồm hai lớp cực tiểu. Trước hết, tại mỗi điểm \(y\), lấy giá trị nhỏ nhất giữa ba kênh \(r\), \(g\), \(b\). Sau đó, trong toàn bộ patch \(\Omega(x)\), tiếp tục lấy giá trị nhỏ nhất của các cực tiểu vừa tạo. Nếu patch chứa bóng đổ, vật tối hoặc vùng có một kênh màu suy giảm mạnh, dark channel sẽ tiến rất gần về \(0\).
+
+Khi haze xuất hiện, thành phần airlight làm các giá trị tối bị nâng lên. Vì vậy, dark channel của ảnh có haze thường sáng hơn dark channel của ảnh sạch và có thể dùng như một chỉ báo thô về độ dày của haze.
+
+\subsection{Atmospheric Light và Transmission}
+
+Sau khi có dark channel, DCP ước lượng ánh sáng khí quyển \(A\) bằng cách tìm các điểm ảnh có dark channel lớn nhất, sau đó chọn điểm sáng nhất trong tập ứng viên đó trên ảnh gốc. Cách làm này dựa trên trực giác rằng các vùng có haze dày hoặc gần màu khí quyển sẽ nổi bật trong dark channel, còn điểm sáng nhất trong số đó là ứng viên hợp lý cho \(A\).
+
+Với \(A\) đã biết, transmission thô được ước lượng bởi:
+\begin{equation}
+\tilde{t}(x)=1-\omega \min_{y\in\Omega(x)} \left(\min_c \frac{I^c(y)}{A^c}\right),
+\end{equation}
+trong đó \(\omega \in (0,1]\) là hệ số điều chỉnh mức loại bỏ haze. Phép chuẩn hóa \(\frac{I^c}{A^c}\) giúp loại ảnh hưởng của màu khí quyển khỏi ảnh đầu vào trước khi áp dụng dark channel. Nếu \(\omega\) lớn, thuật toán loại haze mạnh hơn; nếu \(\omega\) nhỏ, kết quả có xu hướng bảo toàn nhiều haze hơn và trông tự nhiên hơn ở các vùng nhạy cảm.
+
+\subsection{Guided Filter}
+
+Paper DCP gốc dùng soft matting để tinh chỉnh transmission nhằm bám theo biên ảnh. Trong mã nguồn của đồ án, bước này được thay bằng guided filter để phù hợp hơn với yêu cầu hiệu năng của plugin.
+
+Về trực giác, guided filter thực hiện làm mượt transmission nhưng không làm nhòe các biên quan trọng của ảnh hướng dẫn. Ở đây, ảnh hướng dẫn được lấy từ độ chói xám của ảnh đầu vào. Nhờ đó, transmission sau refinement trở nên ổn định hơn trong vùng đồng nhất, đồng thời vẫn giữ chuyển tiếp tốt quanh ranh giới vật thể. Đây là một thay đổi mang tính hiện thực hệ thống: bản chất vẫn là tinh chỉnh transmission có dẫn hướng bởi cấu trúc ảnh, nhưng chi phí tính toán phù hợp hơn cho môi trường tương tác như Paint.NET.
+
+\subsection{Hạn chế của Dark Channel Prior}
+
+Mặc dù hiệu quả và dễ hiện thực, DCP không phải là một giả thiết đúng tuyệt đối. Trước hết, vùng trời sáng hoặc các bề mặt trắng lớn thường không thỏa mãn prior vì trong patch có thể không tồn tại giá trị rất thấp ở bất kỳ kênh màu nào. Khi đó, transmission dễ bị ước lượng sai và ảnh khôi phục có thể bị quá tay.
+
+Thứ hai, nếu dùng một \(\omega\) cố định cho toàn ảnh, cùng một mức dehaze sẽ được áp lên cả vùng có kết cấu mạnh lẫn vùng sáng nhạy cảm. Điều này dễ tạo ra tình trạng tăng tương phản quá mức, lệch màu hoặc mất cảm giác chiều sâu ở một số khu vực. Đây chính là động cơ để đồ án xem xét thêm một cơ chế \textit{adaptive omega}.
+
+Cuối cùng, so với các hướng tiếp cận hiện đại hơn, DCP vẫn là phương pháp dựa trên tiên nghiệm thủ công. Tuy vậy, đồ án vẫn chọn DCP vì ba lý do: nền tảng lý thuyết rõ ràng, pipeline đủ gọn để kiểm soát khi hiện thực plugin, và có thể mở rộng hợp lý bằng nhánh adaptive mà chưa cần tới mô hình học sâu phức tạp.

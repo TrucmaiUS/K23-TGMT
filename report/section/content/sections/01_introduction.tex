@@ -1,0 +1,61 @@
+\section{Giới thiệu}
+
+\subsection{Bối cảnh bài toán}
+
+Ảnh ngoài trời thường bị suy giảm chất lượng do hiện tượng tán xạ ánh sáng bởi bụi, sương mù hoặc hơi nước trong khí quyển. Khi mật độ tán xạ tăng lên, ảnh không chỉ mờ hơn mà còn giảm tương phản cục bộ, mất chi tiết ở vùng xa và xuất hiện sai lệch màu do thành phần ánh sáng khí quyển chen vào tín hiệu quan sát.
+
+Những biến dạng này ảnh hưởng trực tiếp tới cả trải nghiệm chỉnh sửa ảnh lẫn các bài toán thị giác máy tính như phát hiện đặc trưng, phân đoạn và nhận dạng đối tượng. Vì vậy, khử sương mù từ một ảnh đơn là một bài toán vừa có ý nghĩa ứng dụng, vừa có giá trị nghiên cứu rõ ràng.
+
+Bài toán đặt mục tiêu khôi phục ảnh cảnh thật chỉ từ một ảnh quan sát đã bị haze. Đây là bài toán khó vì độ sâu cảnh, lượng ánh sáng khí quyển và mức suy hao truyền dẫn đều chưa biết trước. Khi không có thêm ảnh chụp cùng cảnh trong điều kiện khác hoặc dữ liệu cảm biến phụ trợ, quá trình khôi phục buộc phải dựa vào các giả thiết thống kê đủ mạnh nhưng vẫn phù hợp với ảnh tự nhiên.
+
+Trong thực tế, nhu cầu khử sương mù xuất hiện ở cả hai nhóm ứng dụng lớn. Với người dùng phổ thông, đây là bước nâng chất lượng ảnh để tăng độ rõ, cải thiện màu sắc và hỗ trợ hậu kỳ. Với các hệ thống thị giác máy tính, dehazing còn đóng vai trò tiền xử lý nhằm giúp các bước nhận dạng, theo dõi hoặc phân tích cảnh hoạt động ổn định hơn khi dữ liệu đầu vào bị suy giảm bởi điều kiện thời tiết.
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.30\textwidth}
+    \centering
+    \includegraphics[width=0.96\textwidth]{example1.jpg}
+    \caption{Ảnh hazy 1}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.30\textwidth}
+    \centering
+    \includegraphics[width=0.96\textwidth]{example2.jpg}
+    \caption{Ảnh hazy 2}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.30\textwidth}
+    \centering
+    \includegraphics[width=0.96\textwidth]{example3.jpg}
+    \caption{Ảnh hazy 3}
+  \end{subfigure}
+  \vspace{0.6em}
+  \caption{Ba ví dụ ảnh hazy đầu vào dùng để minh họa bài toán khử sương mù từ một ảnh đơn}
+\end{figure}
+
+Ba ví dụ trên cũng cho thấy haze không biểu hiện theo một dạng duy nhất. Có ảnh bị mờ đều trên toàn cảnh, có ảnh chứa vùng trời hoặc vùng sáng rộng, và cũng có ảnh mà mức suy giảm thay đổi theo độ sâu của cảnh. Chính sự đa dạng này khiến một nghiệm pháp khử haze hiệu quả không chỉ cần tăng tương phản, mà còn phải giữ được màu sắc và mức độ tự nhiên của ảnh sau khôi phục.
+
+\subsection{Hướng tiếp cận}
+
+Một trong những hướng tiếp cận có ảnh hưởng lớn là \textit{Dark Channel Prior} (DCP). Ý tưởng cốt lõi của DCP là trong phần lớn các patch ngoài trời không thuộc vùng trời, thường tồn tại ít nhất một điểm ảnh có cường độ rất thấp ở ít nhất một kênh màu. Khi kết hợp tiên nghiệm này với mô hình khí quyển của ảnh có haze, có thể ước lượng transmission và từ đó khôi phục lại ảnh rõ hơn.
+
+DCP phù hợp với phạm vi đồ án vì vừa có nền tảng vật lý rõ ràng, vừa đủ gọn để hiện thực thành một pipeline xử lý ảnh chạy thực tế. Trên cơ sở đó, đề tài tập trung xây dựng một module dehaze có thể tích hợp trực tiếp vào Paint.NET, đồng thời mở rộng thêm cơ chế \textit{adaptive omega} để cải thiện chất lượng xử lý ở các trường hợp khó như vùng trời hoặc vùng sáng rộng.
+
+\subsection{Mục tiêu của báo cáo}
+
+Báo cáo này tập trung vào ba mục tiêu chính:
+\begin{itemize}
+\item trình bày một cách có hệ thống cơ sở lý thuyết của mô hình haze, mô hình tạo ảnh trong khí quyển và tiên nghiệm Dark Channel Prior, từ đó làm rõ vì sao DCP là lựa chọn phù hợp cho bài toán khử sương mù từ một ảnh đơn;
+\item mô tả đầy đủ quá trình hiện thực module dehaze trong Paint.NET, bao gồm thiết kế pipeline xử lý ảnh, cách tổ chức source code, giao diện plugin, cơ chế preview và cache, cũng như quy trình build và tích hợp vào ứng dụng thực tế;
+\item phân tích adaptive omega như một phần mở rộng của phiên bản DCP cơ sở, với mục tiêu tăng tính linh hoạt của hệ thống trên các ảnh có haze không đồng đều, đặc biệt là những ảnh chứa vùng trời hoặc vùng sáng lớn.
+\end{itemize}
+
+\subsection{Đóng góp chính}
+
+Các đóng góp chính của đồ án có thể tóm tắt như sau:
+\begin{itemize}
+\item hiện thực hoàn chỉnh pipeline DCP cho bài toán khử haze ảnh đơn dưới dạng plugin có thể chạy trực tiếp trong Paint.NET, thay vì chỉ dừng ở mức mô phỏng thuật toán hoặc thử nghiệm trong notebook;
+\item xây dựng giao diện cấu hình đủ gọn cho thao tác thực tế, hỗ trợ xem trước kết quả, điều chỉnh mức dehaze bằng thanh \texttt{Strength} và tái sử dụng cache để cải thiện khả năng phản hồi khi tương tác;
+\item tích hợp thêm chế độ adaptive dựa trên mô hình hồi quy gọn nhẹ để điều chỉnh \(\omega\) theo từng vùng ảnh, qua đó giảm nguy cơ xử lý quá mạnh ở các khu vực nhạy cảm như bầu trời hoặc vùng sáng rộng;
+\item trình bày hệ thống theo hướng thống nhất giữa cơ sở lý thuyết, phần mở rộng adaptive omega, kết quả thực nghiệm và phần hiện thực mã nguồn, giúp toàn bộ báo cáo có mạch liên kết rõ ràng hơn.
+\end{itemize}
