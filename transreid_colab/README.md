@@ -26,6 +26,8 @@ The *official* repository for  [TransReID: Transformer-based Object Re-Identific
 
 ### Installation
 
+Virtual environment setup and activation commands are documented in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
+
 ```bash
 pip install -r requirements.txt
 (we use /torch 1.6.0 /torchvision 0.7.0 /timm 0.3.2 /cuda 10.1 / 16G or 32G V100 for training and evaluation.

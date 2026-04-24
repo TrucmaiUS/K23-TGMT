@@ -79,6 +79,99 @@ def make_loss(cfg, num_classes):    # modified by gu
         part_match_loss = 0.5 * (row_loss + col_loss)
         return align_loss, part_match_loss
 
+    def semantic_batch_prototype_loss(outputs, target):
+        semantic_tokens = outputs.get("semantic_tokens")
+        visible_mask = outputs.get("semantic_visible_mask")
+        if semantic_tokens is None or visible_mask is None:
+            return outputs["global_feat"].new_tensor(0.0)
+
+        semantic_tokens = F.normalize(semantic_tokens, dim=-1)
+        prototype_tokens = semantic_tokens.detach() if cfg.MODEL.SEM_ALIGN.DETACH_BATCH_PROTOTYPES else semantic_tokens
+        visible_mask = visible_mask > 0.5
+        temperature = max(cfg.MODEL.SEM_ALIGN.MATCH_TEMPERATURE, cfg.MODEL.SEM_ALIGN.EPS)
+        losses = []
+
+        for part_index in range(semantic_tokens.size(1)):
+            part_visible = visible_mask[:, part_index]
+            visible_indices = torch.nonzero(part_visible, as_tuple=False).squeeze(1)
+            if visible_indices.numel() < 2:
+                continue
+
+            part_anchor_tokens = semantic_tokens[visible_indices, part_index]
+            part_proto_tokens = prototype_tokens[visible_indices, part_index]
+            part_targets = target[visible_indices]
+            unique_ids, inverse = torch.unique(part_targets, sorted=False, return_inverse=True)
+
+            if unique_ids.numel() < 2:
+                continue
+
+            prototype_sums = part_proto_tokens.new_zeros(unique_ids.numel(), part_proto_tokens.size(-1))
+            prototype_sums.index_add_(0, inverse, part_proto_tokens)
+            prototype_counts = torch.bincount(inverse, minlength=unique_ids.numel()).to(part_proto_tokens.dtype)
+
+            for anchor_index in range(part_anchor_tokens.size(0)):
+                positive_group = inverse[anchor_index].item()
+
+                candidate_sums = prototype_sums.clone()
+                candidate_counts = prototype_counts.clone()
+                candidate_sums[positive_group] -= part_proto_tokens[anchor_index]
+                candidate_counts[positive_group] -= 1
+
+                valid_groups = candidate_counts > 0
+                if valid_groups.sum().item() < 2 or not valid_groups[positive_group]:
+                    continue
+
+                group_indices = torch.nonzero(valid_groups, as_tuple=False).squeeze(1)
+                positive_index = torch.nonzero(group_indices == positive_group, as_tuple=False).view(-1).item()
+                candidate_prototypes = candidate_sums[group_indices] / candidate_counts[group_indices].unsqueeze(1)
+                candidate_prototypes = F.normalize(candidate_prototypes, dim=-1)
+
+                logits = torch.matmul(
+                    part_anchor_tokens[anchor_index:anchor_index + 1],
+                    candidate_prototypes.transpose(0, 1)
+                ) / temperature
+                losses.append(F.cross_entropy(logits, torch.tensor([positive_index], device=logits.device)))
+
+        if not losses:
+            return outputs["global_feat"].new_tensor(0.0)
+        return torch.stack(losses).mean()
+
+    def semantic_patch_supervision_loss(outputs):
+        semantic_patch_logits = outputs.get("semantic_patch_logits")
+        semantic_patch_targets = outputs.get("semantic_patch_targets")
+        if semantic_patch_logits is None or semantic_patch_targets is None:
+            return outputs["global_feat"].new_tensor(0.0)
+
+        patch_log_prob = F.log_softmax(semantic_patch_logits, dim=-1)
+        patch_loss = -(semantic_patch_targets * patch_log_prob).sum(dim=-1)
+        foreground_mass = 1.0 - semantic_patch_targets[..., 0]
+        patch_weights = 0.25 + 0.75 * foreground_mass
+        return (patch_loss * patch_weights).sum() / (patch_weights.sum() + cfg.MODEL.SEM_ALIGN.EPS)
+
+    def semantic_pixel_decoder_loss(outputs):
+        semantic_pixel_logits = outputs.get("semantic_pixel_logits")
+        semantic_pixel_targets = outputs.get("semantic_pixel_targets")
+        if semantic_pixel_logits is None or semantic_pixel_targets is None:
+            return outputs["global_feat"].new_tensor(0.0)
+
+        semantic_pixel_targets = semantic_pixel_targets.long().clamp(0, cfg.MODEL.SEM_ALIGN.NUM_PARTS)
+        if semantic_pixel_logits.shape[-2:] != semantic_pixel_targets.shape[-2:]:
+            semantic_pixel_logits = F.interpolate(
+                semantic_pixel_logits,
+                size=semantic_pixel_targets.shape[-2:],
+                mode='bilinear',
+                align_corners=False,
+            )
+
+        pixel_loss = F.cross_entropy(semantic_pixel_logits, semantic_pixel_targets, reduction='none')
+        bg_weight = float(cfg.MODEL.SEM_ALIGN.PIXEL_LOSS_BG_WEIGHT)
+        pixel_weights = torch.where(
+            semantic_pixel_targets > 0,
+            torch.ones_like(pixel_loss),
+            pixel_loss.new_full(pixel_loss.shape, bg_weight),
+        )
+        return (pixel_loss * pixel_weights).sum() / (pixel_weights.sum() + cfg.MODEL.SEM_ALIGN.EPS)
+
     def legacy_softmax_triplet_loss(score, feat, target):
         if cfg.MODEL.IF_LABELSMOOTH == 'on':
             if isinstance(score, list):
@@ -123,8 +216,15 @@ def make_loss(cfg, num_classes):    # modified by gu
             total_loss = total_loss + cfg.MODEL.VIS_WEIGHT.LAMBDA_REG * patch_weight_regularizer(patch_weights)
 
         align_loss, separation_loss = semantic_alignment_losses(outputs)
-        total_loss = total_loss + cfg.MODEL.SEM_ALIGN.LAMBDA_ALIGN * align_loss
-        total_loss = total_loss + cfg.MODEL.SEM_ALIGN.LAMBDA_SEP * separation_loss
+        batch_proto_loss = semantic_batch_prototype_loss(outputs, target)
+        patch_semantic_loss = semantic_patch_supervision_loss(outputs)
+        pixel_semantic_loss = semantic_pixel_decoder_loss(outputs)
+        semantic_loss_scale = outputs.get("semantic_loss_scale", 1.0)
+        total_loss = total_loss + semantic_loss_scale * cfg.MODEL.SEM_ALIGN.LAMBDA_ALIGN * align_loss
+        total_loss = total_loss + semantic_loss_scale * cfg.MODEL.SEM_ALIGN.LAMBDA_SEP * separation_loss
+        total_loss = total_loss + semantic_loss_scale * cfg.MODEL.SEM_ALIGN.LAMBDA_BATCH * batch_proto_loss
+        total_loss = total_loss + semantic_loss_scale * cfg.MODEL.SEM_ALIGN.LAMBDA_PATCH * patch_semantic_loss
+        total_loss = total_loss + semantic_loss_scale * cfg.MODEL.SEM_ALIGN.LAMBDA_PIXEL * pixel_semantic_loss
 
         return total_loss
 

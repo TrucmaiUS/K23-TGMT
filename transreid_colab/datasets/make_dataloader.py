@@ -8,7 +8,6 @@ import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 
 from .bases import ImageDataset
-from timm.data.random_erasing import RandomErasing
 from .sampler import RandomIdentitySampler
 from .dukemtmcreid import DukeMTMCreID
 from .market1501 import Market1501
@@ -62,12 +61,7 @@ class ReIDPairTransform(object):
         self.padding = cfg.INPUT.PADDING
         self.pixel_mean = cfg.INPUT.PIXEL_MEAN
         self.pixel_std = cfg.INPUT.PIXEL_STD
-        self.random_erasing = RandomErasing(
-            probability=cfg.INPUT.RE_PROB,
-            mode='pixel',
-            max_count=1,
-            device='cpu'
-        ) if is_train else None
+        self.re_prob = cfg.INPUT.RE_PROB if is_train else 0.0
         self.image_interp = _bicubic_mode()
         self.mask_interp = _nearest_mode()
         self.flip_label_pairs = [
@@ -75,6 +69,30 @@ class ReIDPairTransform(object):
             for pair in cfg.MODEL.SEM_ALIGN.FLIP_LABEL_PAIRS
             if len(pair) == 2
         ]
+
+    def _apply_paired_random_erasing(self, img, semantic_mask=None):
+        if self.re_prob <= 0.0 or torch.rand(1).item() >= self.re_prob:
+            return img, semantic_mask
+
+        area = img.shape[1] * img.shape[2]
+        for _ in range(10):
+            target_area = torch.empty(1).uniform_(0.02, 0.4).item() * area
+            aspect_ratio = torch.empty(1).uniform_(0.3, 3.3).item()
+
+            erase_h = int(round((target_area * aspect_ratio) ** 0.5))
+            erase_w = int(round((target_area / max(aspect_ratio, 1e-6)) ** 0.5))
+
+            if erase_h < img.shape[1] and erase_w < img.shape[2]:
+                top = torch.randint(0, img.shape[1] - erase_h + 1, (1,)).item()
+                left = torch.randint(0, img.shape[2] - erase_w + 1, (1,)).item()
+                img[:, top:top + erase_h, left:left + erase_w] = torch.empty(
+                    img.shape[0], erase_h, erase_w, dtype=img.dtype
+                ).normal_()
+                if semantic_mask is not None:
+                    semantic_mask[top:top + erase_h, left:left + erase_w] = 0
+                return img, semantic_mask
+
+        return img, semantic_mask
 
     def __call__(self, img, semantic_mask=None):
         img = TF.resize(img, self.size, interpolation=self.image_interp)
@@ -103,13 +121,12 @@ class ReIDPairTransform(object):
         img = TF.to_tensor(img)
         img = TF.normalize(img, mean=self.pixel_mean, std=self.pixel_std)
 
-        if self.random_erasing is not None:
-            img = self.random_erasing(img)
-
         if semantic_mask is None:
+            img, _ = self._apply_paired_random_erasing(img, None)
             return img, None
 
         semantic_mask = torch.from_numpy(np.array(semantic_mask, dtype=np.int64))
+        img, semantic_mask = self._apply_paired_random_erasing(img, semantic_mask)
         return img, semantic_mask
 
 

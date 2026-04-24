@@ -29,7 +29,8 @@ def weights_init_kaiming(m):
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:
         nn.init.kaiming_normal_(m.weight, a=0, mode='fan_out')
-        nn.init.constant_(m.bias, 0.0)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0.0)
 
     elif classname.find('Conv') != -1:
         nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
@@ -44,7 +45,7 @@ def weights_init_classifier(m):
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:
         nn.init.normal_(m.weight, std=0.001)
-        if m.bias:
+        if m.bias is not None:
             nn.init.constant_(m.bias, 0.0)
 
 
@@ -103,10 +104,14 @@ class SemanticAlignmentHead(nn.Module):
         super().__init__()
         self.num_parts = cfg.MODEL.SEM_ALIGN.NUM_PARTS
         self.patch_grid = patch_grid
+        self.mask_size = tuple(cfg.INPUT.SIZE_TRAIN)
         self.visible_threshold = cfg.MODEL.SEM_ALIGN.VISIBLE_THRESHOLD
         self.eps = cfg.MODEL.SEM_ALIGN.EPS
         self.detach_reference = cfg.MODEL.SEM_ALIGN.DETACH_REFERENCE
+        self.pixel_decoder_enabled = cfg.MODEL.SEM_ALIGN.PIXEL_DECODER_ENABLED
         score_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.SCORE_HIDDEN_DIM_RATIO)
+        patch_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.PATCH_HIDDEN_DIM_RATIO)
+        pixel_decoder_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.PIXEL_DECODER_HIDDEN_DIM_RATIO)
 
         self.part_score_head = nn.Sequential(
             nn.Linear(dim, score_hidden_dim),
@@ -119,20 +124,45 @@ class SemanticAlignmentHead(nn.Module):
             nn.LayerNorm(dim)
         )
         self.ref_proj = nn.LayerNorm(dim, elementwise_affine=False)
+        self.patch_classifier = nn.Sequential(
+            nn.Linear(dim, patch_hidden_dim),
+            nn.GELU(),
+            nn.Linear(patch_hidden_dim, self.num_parts + 1)
+        )
+        self.pixel_decoder = SemanticPixelDecoder(
+            dim=dim,
+            hidden_dim=pixel_decoder_hidden_dim,
+            num_classes=self.num_parts + 1,
+            patch_grid=self.patch_grid,
+            output_size=self.mask_size,
+        ) if self.pixel_decoder_enabled else None
 
         self.part_score_head.apply(weights_init_kaiming)
         self.main_proj.apply(weights_init_kaiming)
+        self.patch_classifier.apply(weights_init_kaiming)
 
     def _build_part_masks(self, semantic_masks, device):
-        semantic_masks = semantic_masks.to(device=device, dtype=torch.float32).unsqueeze(1)
-        semantic_masks = F.interpolate(semantic_masks, size=self.patch_grid, mode='nearest').long().squeeze(1)
+        semantic_masks = semantic_masks.to(device=device, dtype=torch.long)
+        resized_masks = F.interpolate(
+            semantic_masks.unsqueeze(1).float(),
+            size=self.patch_grid,
+            mode='nearest'
+        ).long().squeeze(1)
         part_masks = [
-            (semantic_masks == part_index).float()
+            (resized_masks == part_index).float()
             for part_index in range(1, self.num_parts + 1)
         ]
         part_masks = torch.stack(part_masks, dim=1).flatten(2)
         visible_mask = part_masks.sum(dim=-1) >= self.visible_threshold
-        return part_masks, visible_mask
+        return part_masks, visible_mask, resized_masks
+
+    def _build_patch_targets(self, semantic_masks):
+        semantic_masks = semantic_masks.clamp(0, self.num_parts)
+        one_hot_masks = F.one_hot(semantic_masks, num_classes=self.num_parts + 1).permute(0, 3, 1, 2).float()
+        patch_targets = F.adaptive_avg_pool2d(one_hot_masks, self.patch_grid)
+        patch_targets = patch_targets.permute(0, 2, 3, 1).reshape(-1, self.patch_grid[0] * self.patch_grid[1], self.num_parts + 1)
+        patch_targets = patch_targets / patch_targets.sum(dim=-1, keepdim=True).clamp_min(self.eps)
+        return patch_targets
 
     def _pool_main_tokens(self, patch_tokens, part_masks):
         patch_scores = self.part_score_head(patch_tokens).permute(0, 2, 1) + self.eps
@@ -149,19 +179,96 @@ class SemanticAlignmentHead(nn.Module):
         return reference_tokens
 
     def forward(self, patch_tokens, reference_patch_tokens, semantic_masks):
-        part_masks, visible_mask = self._build_part_masks(semantic_masks, patch_tokens.device)
+        part_masks, visible_mask, resized_masks = self._build_part_masks(semantic_masks, patch_tokens.device)
         semantic_tokens, semantic_pool_weights = self._pool_main_tokens(patch_tokens, part_masks)
+        semantic_raw_tokens = semantic_tokens
 
-        if self.detach_reference:
-            reference_patch_tokens = reference_patch_tokens.detach()
-        semantic_reference_tokens = self._pool_reference_tokens(reference_patch_tokens, part_masks)
+        semantic_reference_tokens = None
+        if reference_patch_tokens is not None:
+            if self.detach_reference:
+                reference_patch_tokens = reference_patch_tokens.detach()
+            semantic_reference_tokens = self._pool_reference_tokens(reference_patch_tokens, part_masks)
+        semantic_patch_targets = self._build_patch_targets(semantic_masks.to(device=patch_tokens.device, dtype=torch.long))
+        semantic_patch_logits = self.patch_classifier(patch_tokens)
+        semantic_pixel_logits = self.pixel_decoder(patch_tokens) if self.pixel_decoder is not None else None
+        semantic_pixel_targets = semantic_masks.to(device=patch_tokens.device, dtype=torch.long).clamp(0, self.num_parts)
 
         return {
+            "semantic_raw_tokens": semantic_raw_tokens,
             "semantic_tokens": self.main_proj(semantic_tokens),
-            "semantic_reference_tokens": self.ref_proj(semantic_reference_tokens),
+            "semantic_reference_tokens": self.ref_proj(semantic_reference_tokens) if semantic_reference_tokens is not None else None,
             "semantic_visible_mask": visible_mask.float(),
+            "semantic_patch_labels": resized_masks.flatten(1),
+            "semantic_patch_targets": semantic_patch_targets,
+            "semantic_patch_logits": semantic_patch_logits,
+            "semantic_pixel_targets": semantic_pixel_targets,
+            "semantic_pixel_logits": semantic_pixel_logits,
             "semantic_pool_weights": semantic_pool_weights,
         }
+
+
+class SemanticPixelDecoder(nn.Module):
+    def __init__(self, dim, hidden_dim, num_classes, patch_grid, output_size):
+        super().__init__()
+        self.patch_grid = patch_grid
+        self.output_size = tuple(output_size)
+        self.decoder = nn.Sequential(
+            nn.Conv2d(dim, hidden_dim, kernel_size=1, bias=False),
+            nn.BatchNorm2d(hidden_dim),
+            nn.GELU(),
+            nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(hidden_dim),
+            nn.GELU(),
+            nn.Conv2d(hidden_dim, num_classes, kernel_size=1),
+        )
+        self.apply(weights_init_kaiming)
+
+    def forward(self, patch_tokens):
+        batch, num_tokens, dim = patch_tokens.shape
+        height, width = self.patch_grid
+        if num_tokens != height * width:
+            raise ValueError(
+                'Expected {} patch tokens for grid {}, but got {}.'.format(
+                    height * width, self.patch_grid, num_tokens
+                )
+            )
+        x = patch_tokens.transpose(1, 2).reshape(batch, dim, height, width)
+        logits = self.decoder(x)
+        return F.interpolate(logits, size=self.output_size, mode='bilinear', align_corners=False)
+
+
+class SemanticFusionBlock(nn.Module):
+    def __init__(self, dim, cfg):
+        super().__init__()
+        self.eps = cfg.MODEL.SEM_ALIGN.EPS
+        hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.FUSION_HIDDEN_DIM_RATIO)
+        self.semantic_proj = nn.Sequential(
+            nn.Linear(dim, dim, bias=False),
+            nn.LayerNorm(dim)
+        )
+        self.gate = nn.Sequential(
+            nn.Linear(dim * 2, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.semantic_proj.apply(weights_init_kaiming)
+        self.gate.apply(weights_init_kaiming)
+        nn.init.constant_(self.gate[-1].weight, 0.0)
+        nn.init.constant_(self.gate[-1].bias, -4.0)
+
+    def forward(self, global_feat, semantic_tokens, visible_mask, fusion_scale=1.0):
+        if semantic_tokens is None or visible_mask is None:
+            return global_feat, None, None
+
+        visible_weights = visible_mask.unsqueeze(-1)
+        semantic_global = (semantic_tokens * visible_weights).sum(dim=1)
+        semantic_global = semantic_global / (visible_weights.sum(dim=1) + self.eps)
+        semantic_global = self.semantic_proj(semantic_global)
+        fusion_gate = torch.sigmoid(self.gate(torch.cat([global_feat, semantic_global], dim=1)))
+        if not torch.is_tensor(fusion_scale):
+            fusion_scale = semantic_global.new_tensor(float(fusion_scale))
+        fused_global_feat = global_feat + fusion_scale * fusion_gate * semantic_global
+        return fused_global_feat, semantic_global, fusion_gate.squeeze(-1)
 
 
 class Backbone(nn.Module):
@@ -250,6 +357,9 @@ class build_transformer(nn.Module):
         self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
+        self.semantic_warmup_epochs = cfg.MODEL.SEM_ALIGN.WARMUP_EPOCHS
+        self.enable_semantic_fusion = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.FUSE_GLOBAL
+        self.semantic_needs_reference = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.LAMBDA_ALIGN > 0
         self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
         self.topk_ratio = cfg.MODEL.TOKEN_ENRICH.TOPK_RATIO
         self.enrich_scale = cfg.MODEL.TOKEN_ENRICH.ENRICH_SCALE
@@ -308,6 +418,7 @@ class build_transformer(nn.Module):
             self.semantic_align_head = SemanticAlignmentHead(self.in_planes, self.patch_grid, cfg)
         else:
             self.semantic_align_head = None
+        self.semantic_fusion = SemanticFusionBlock(self.in_planes, cfg) if self.enable_semantic_fusion else None
 
         if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
@@ -383,6 +494,24 @@ class build_transformer(nn.Module):
             return {}
         return self.semantic_align_head(patch_tokens, reference_patch_tokens, semantic_masks)
 
+    def _get_semantic_loss_scale(self, epoch):
+        if not self.enable_sem_align:
+            return 0.0
+        if epoch is None or self.semantic_warmup_epochs <= 0:
+            return 1.0
+        return min(1.0, float(epoch) / float(self.semantic_warmup_epochs))
+
+    def _fuse_semantic_features(self, global_feat, semantic_outputs, epoch):
+        if self.semantic_fusion is None or not semantic_outputs:
+            return global_feat, None, None
+        fusion_scale = self._get_semantic_loss_scale(epoch) if self.training else 1.0
+        return self.semantic_fusion(
+            global_feat,
+            semantic_outputs.get("semantic_raw_tokens", semantic_outputs.get("semantic_tokens")),
+            semantic_outputs.get("semantic_visible_mask"),
+            fusion_scale=fusion_scale,
+        )
+
     def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False, semantic_masks=None):
         if not self.token_branch_enabled:
             global_feat = self.base(x, cam_label=cam_label, view_label=view_label)
@@ -396,7 +525,7 @@ class build_transformer(nn.Module):
                 return feat
             return global_feat
 
-        if self.enable_sem_align:
+        if self.enable_sem_align and self.semantic_needs_reference:
             token_features, reference_features = self.base(
                 x,
                 cam_label=cam_label,
@@ -405,6 +534,9 @@ class build_transformer(nn.Module):
                 return_pre_final_tokens=True
             )
             reference_patch_tokens = reference_features[:, 1:]
+        elif self.enable_sem_align:
+            token_features = self.base(x, cam_label=cam_label, view_label=view_label, return_all_tokens=True)
+            reference_patch_tokens = None
         else:
             token_features = self.base(x, cam_label=cam_label, view_label=view_label, return_all_tokens=True)
             reference_patch_tokens = None
@@ -434,7 +566,15 @@ class build_transformer(nn.Module):
             selection_mask = patch_context["selection_mask"]
             selected_indices = patch_context["selected_indices"]
 
-        global_bn_feat = self.bottleneck(global_feat)
+        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
+        if semantic_outputs:
+            semantic_outputs["semantic_loss_scale"] = patch_tokens.new_tensor(self._get_semantic_loss_scale(epoch))
+        fused_global_feat, semantic_global_feat, semantic_fusion_gate = self._fuse_semantic_features(global_feat, semantic_outputs, epoch)
+        if semantic_outputs:
+            semantic_outputs["semantic_global_feat"] = semantic_global_feat
+            semantic_outputs["semantic_fusion_gate"] = semantic_fusion_gate
+
+        global_bn_feat = self.bottleneck(fused_global_feat)
         local_feats = []
         local_bn_feats = []
         local_logits = []
@@ -453,13 +593,12 @@ class build_transformer(nn.Module):
                     self.classifier_low(local_bn_feats[2])
                 ]
 
-        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
-
         if self.training:
             outputs = {
-                "global_feat": global_feat,
+                "global_feat": fused_global_feat,
                 "global_bn_feat": global_bn_feat,
                 "global_logits": self._apply_global_classifier(global_bn_feat, label),
+                "raw_global_feat": global_feat,
                 "local_feats": local_feats,
                 "local_bn_feats": local_bn_feats,
                 "local_logits": local_logits,
@@ -473,12 +612,13 @@ class build_transformer(nn.Module):
             outputs.update(semantic_outputs)
             return outputs
 
-        retrieval_feat = global_bn_feat if self.neck_feat == 'after' else global_feat
+        retrieval_feat = global_bn_feat if self.neck_feat == 'after' else fused_global_feat
         if return_feature_dict:
             feature_dict = {
                 "retrieval_feat": retrieval_feat,
-                "global_feat": global_feat,
+                "global_feat": fused_global_feat,
                 "global_bn_feat": global_bn_feat,
+                "raw_global_feat": global_feat,
                 "local_feats": local_feats,
                 "local_bn_feats": local_bn_feats,
                 "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
@@ -524,6 +664,9 @@ class build_transformer_local(nn.Module):
         self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
+        self.semantic_warmup_epochs = cfg.MODEL.SEM_ALIGN.WARMUP_EPOCHS
+        self.enable_semantic_fusion = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.FUSE_GLOBAL
+        self.semantic_needs_reference = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.LAMBDA_ALIGN > 0
         self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
         self.topk_ratio = cfg.MODEL.TOKEN_ENRICH.TOPK_RATIO
         self.enrich_scale = cfg.MODEL.TOKEN_ENRICH.ENRICH_SCALE
@@ -620,6 +763,7 @@ class build_transformer_local(nn.Module):
             self.semantic_align_head = SemanticAlignmentHead(self.in_planes, self.patch_grid, cfg)
         else:
             self.semantic_align_head = None
+        self.semantic_fusion = SemanticFusionBlock(self.in_planes, cfg) if self.enable_semantic_fusion else None
 
         if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
@@ -698,10 +842,28 @@ class build_transformer_local(nn.Module):
             return {}
         return self.semantic_align_head(patch_tokens, reference_patch_tokens, semantic_masks)
 
+    def _get_semantic_loss_scale(self, epoch):
+        if not self.enable_sem_align:
+            return 0.0
+        if epoch is None or self.semantic_warmup_epochs <= 0:
+            return 1.0
+        return min(1.0, float(epoch) / float(self.semantic_warmup_epochs))
+
+    def _fuse_semantic_features(self, global_feat, semantic_outputs, epoch):
+        if self.semantic_fusion is None or not semantic_outputs:
+            return global_feat, None, None
+        fusion_scale = self._get_semantic_loss_scale(epoch) if self.training else 1.0
+        return self.semantic_fusion(
+            global_feat,
+            semantic_outputs.get("semantic_raw_tokens", semantic_outputs.get("semantic_tokens")),
+            semantic_outputs.get("semantic_visible_mask"),
+            fusion_scale=fusion_scale,
+        )
+
     def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False, semantic_masks=None):  # label is unused if self.cos_layer == 'no'
 
         features = self.base(x, cam_label=cam_label, view_label=view_label)
-        reference_patch_tokens = self.base.norm(features)[:, 1:] if self.enable_sem_align else None
+        reference_patch_tokens = self.base.norm(features)[:, 1:] if self.semantic_needs_reference else None
 
         # global branch
         b1_feat = self.b1(features) # [64, 129, 768]
@@ -757,7 +919,15 @@ class build_transformer_local(nn.Module):
         b4_local_feat = self.b2(torch.cat((token, b4_local_feat), dim=1))
         local_feat_4 = b4_local_feat[:, 0]
 
-        feat = self.bottleneck(weighted_global_feat)
+        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
+        if semantic_outputs:
+            semantic_outputs["semantic_loss_scale"] = patch_tokens.new_tensor(self._get_semantic_loss_scale(epoch))
+        fused_global_feat, semantic_global_feat, semantic_fusion_gate = self._fuse_semantic_features(weighted_global_feat, semantic_outputs, epoch)
+        if semantic_outputs:
+            semantic_outputs["semantic_global_feat"] = semantic_global_feat
+            semantic_outputs["semantic_fusion_gate"] = semantic_fusion_gate
+
+        feat = self.bottleneck(fused_global_feat)
 
         local_feat_1_bn = self.bottleneck_1(local_feat_1)
         local_feat_2_bn = self.bottleneck_2(local_feat_2)
@@ -782,13 +952,11 @@ class build_transformer_local(nn.Module):
                     self.classifier_low(local_group_bn_feats[2])
                 ]
 
-        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
-
         if self.training:
             if self.ID_LOSS_TYPE in ('arcface', 'cosface', 'amsoftmax', 'circle'):
                 cls_score = self.classifier(feat, label)
                 jpm_scores = cls_score
-                jpm_feats = weighted_global_feat
+                jpm_feats = fused_global_feat
             else:
                 cls_score = self.classifier(feat)
                 cls_score_1 = self.classifier_1(local_feat_1_bn)
@@ -796,13 +964,14 @@ class build_transformer_local(nn.Module):
                 cls_score_3 = self.classifier_3(local_feat_3_bn)
                 cls_score_4 = self.classifier_4(local_feat_4_bn)
                 jpm_scores = [cls_score, cls_score_1, cls_score_2, cls_score_3, cls_score_4]
-                jpm_feats = [weighted_global_feat, local_feat_1, local_feat_2, local_feat_3, local_feat_4]
+                jpm_feats = [fused_global_feat, local_feat_1, local_feat_2, local_feat_3, local_feat_4]
 
             if self.token_branch_enabled:
                 outputs = {
-                    "global_feat": weighted_global_feat,
+                    "global_feat": fused_global_feat,
                     "global_bn_feat": feat,
                     "global_logits": cls_score,
+                    "raw_global_feat": weighted_global_feat,
                     "local_feats": local_group_feats,
                     "local_bn_feats": local_group_bn_feats,
                     "local_logits": local_group_logits,
@@ -831,17 +1000,18 @@ class build_transformer_local(nn.Module):
                         )
                     else:
                         retrieval_feat = torch.cat(
-                            [weighted_global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4],
+                            [fused_global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4],
                             dim=1
                         )
                 else:
-                    retrieval_feat = feat if self.neck_feat == 'after' else weighted_global_feat
+                    retrieval_feat = feat if self.neck_feat == 'after' else fused_global_feat
                 if return_feature_dict:
                     feature_dict = {
                         "retrieval_feat": retrieval_feat,
-                        "global_only_feat": feat if self.neck_feat == 'after' else weighted_global_feat,
-                        "global_feat": weighted_global_feat,
+                        "global_only_feat": feat if self.neck_feat == 'after' else fused_global_feat,
+                        "global_feat": fused_global_feat,
                         "global_bn_feat": feat,
+                        "raw_global_feat": weighted_global_feat,
                         "local_feats": local_group_feats,
                         "local_bn_feats": local_group_bn_feats,
                         "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
