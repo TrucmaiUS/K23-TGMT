@@ -43,15 +43,15 @@ Các biến thể được gọi bằng tên mô tả trực tiếp thay cho cá
 \midrule
 \multicolumn{2}{@{}l}{\textbf{Thiết lập fine-tune từ checkpoint ReID}} \\
 \cmidrule(lr){1-2}
-Hợp nhất toàn cục có trọng số & Hợp nhất tuyến tính giữa đặc trưng global gốc và đặc trưng patch có trọng số với \(\alpha=0.8\). \\
+Hợp nhất toàn cục có trọng số & Hợp nhất tuyến tính giữa đặc trưng toàn cục gốc và đặc trưng patch có trọng số với \(\alpha=0.8\). \\
 Cấu hình đối chứng cận baseline & Đặt \(\alpha=1.0\) để triệt giảm đóng góp trực tiếp của nhánh patch vào đầu ra, qua đó tạo một đối chứng gần với baseline. \\
 Gán trọng số ở mức JPM & Áp dụng cơ chế gán trọng số trên các nhánh cục bộ của JPM nhằm khảo sát tích hợp ở mức vùng. \\
 Chọn lọc top-k theo foreground & Giữ lại các patch có foreground score cao nhất trước khi tạo đặc trưng truy hồi nhằm kiểm tra khả năng chọn lọc vùng nhìn thấy đáng tin cậy. \\
 \addlinespace[2pt]
 \multicolumn{2}{@{}l}{\textbf{Thiết lập huấn luyện từ khởi tạo ImageNet}} \\
 \cmidrule(lr){1-2}
-Thay thế trực tiếp đặc trưng toàn cục & Thay trực tiếp đặc trưng global bằng đặc trưng patch đã được gán trọng số để kiểm tra khả năng thay thế hoàn toàn nhánh toàn cục. \\
-Hiệu chỉnh residual có cổng & Tích hợp nhánh patch dưới dạng hiệu chỉnh residual với cổng học được nhằm bảo toàn vai trò trung tâm của đặc trưng global trong giai đoạn đầu huấn luyện. \\
+Thay thế trực tiếp đặc trưng toàn cục & Thay trực tiếp đặc trưng toàn cục bằng đặc trưng patch đã được gán trọng số để kiểm tra khả năng thay thế hoàn toàn nhánh toàn cục. \\
+Hiệu chỉnh residual có cổng & Tích hợp nhánh patch dưới dạng hiệu chỉnh residual với cổng học được nhằm bảo toàn vai trò trung tâm của đặc trưng toàn cục trong giai đoạn đầu huấn luyện. \\
 OVTF & Kết hợp gán trọng số theo khả năng quan sát, bổ sung token động, hợp nhất tại JPM và tăng cường che khuất tổng hợp. \\
 \bottomrule
 \end{tabular}
