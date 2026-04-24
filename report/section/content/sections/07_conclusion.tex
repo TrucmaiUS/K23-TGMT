@@ -1,9 +1,0 @@
-\section{Kết luận}
-
-Đồ án đã xây dựng được một module nhúng dehaze cho Paint.NET dựa trên nền tảng Dark Channel Prior. Đây là mục tiêu trung tâm của toàn bộ hệ thống. Về mặt thuật toán, plugin hiện thực đầy đủ chuỗi xử lý gồm dark channel, ước lượng atmospheric light, dựng transmission, guided refinement và phục hồi ảnh theo mô hình khí quyển. Về mặt hệ thống, pipeline này đã được đóng gói thành một plugin có thể dùng trực tiếp trong Paint.NET thay vì chỉ tồn tại ở dạng mã thử nghiệm.
-
-Trên nền tảng module cơ sở đó, đồ án bổ sung thêm phần mở rộng adaptive omega. Thay vì giữ nguyên \(\omega\) cố định như cách cài đặt DCP cơ sở, đồ án xây dựng một quy luật gọn cho \(\omega(x)\) từ dark channel, contrast và saturation, sau đó triển khai quy luật này trong hệ thống. Phần này được xem là thành phần cải tiến bổ sung cho hệ thống chính, không phải trọng tâm thay thế mục tiêu hiện thực plugin.
-
-Ngoài phần thuật toán, plugin còn được tổ chức theo hướng phù hợp với sử dụng thực tế: có hộp thoại cấu hình riêng, preview trên ảnh thu nhỏ, cache để tránh tính toán lặp và quy trình build thành \texttt{.dll} cho Paint.NET. Vì vậy, giá trị chính của đồ án không chỉ nằm ở việc cài đặt một phương pháp dehazing, mà ở chỗ đưa phương pháp đó thành một thành phần phần mềm có thể chạy, quan sát và đánh giá trực tiếp trong môi trường chỉnh sửa ảnh.
-
-Từ góc nhìn kỹ thuật, kết quả đạt được cho thấy DCP vẫn là một nền tảng phù hợp cho các đồ án theo hướng hiện thực hệ thống: đủ chặt chẽ về mặt học thuật, đủ gọn để kiểm soát trong mã nguồn, và vẫn còn không gian để mở rộng bằng các cơ chế thích nghi như adaptive omega. Đây là cơ sở hợp lý để tiếp tục phát triển plugin theo hướng vừa nâng cao chất lượng khử haze, vừa cải thiện hiệu năng và trải nghiệm sử dụng trong các bước tiếp theo.
