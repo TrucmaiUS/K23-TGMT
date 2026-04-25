@@ -1,0 +1,32 @@
+% !TeX root = ../main.tex
+% ====================
+% VII. KET LUAN
+% ====================
+\section{Kết luận}
+
+Bài báo đã nghiên cứu bài toán \textit{Person Re-identification} trên nền tảng
+TransReID và đề xuất cơ chế \textit{visibility-guided patch weighting} nhằm ưu
+tiên các patch chứa thông tin nhận dạng đáng tin cậy hơn trong quá trình truy
+hồi. Kết quả thực nghiệm trên Market-1501 cho thấy hướng thay thế trực tiếp đặc
+trưng toàn cục bằng đặc trưng patch là không phù hợp, khi chỉ đạt $64.0\%$ mAP
+và $81.8\%$ Rank-1 trong thiết lập khởi tạo từ ImageNet. Ngược lại, khi nhánh
+patch được sử dụng như một tín hiệu bổ trợ có kiểm soát cho đặc trưng toàn cục,
+mô hình đạt hiệu năng cao hơn và ổn định hơn rõ rệt.
+
+Trong thiết lập fine-tune từ checkpoint ReID, biến thể hợp nhất toàn cục có
+trọng số đạt kết quả tốt nhất với $89.5\%$ mAP và $95.5\%$ Rank-1, cho thấy
+phương pháp đề xuất tương thích tốt với baseline TransReID đã được huấn luyện
+trước. Trong thiết lập huấn luyện từ khởi tạo ImageNet, biến thể hiệu chỉnh
+residual có cổng đạt $88.4\%$ mAP và $94.9\%$ Rank-1, còn OVTF đạt $89.3\%$
+mAP và $95.1\%$ Rank-1, đồng thời cải thiện mAP so
+với baseline cùng giao thức. Các kết quả này cho thấy thông tin patch-level có
+giá trị thực tiễn cho Person ReID, nhưng phát huy hiệu quả rõ nhất khi được
+tích hợp theo hướng bổ trợ hoặc hiệu chỉnh đặc trưng toàn cục, thay vì thay thế
+hoàn toàn nhánh toàn cục.
+
+Từ đó, có thể kết luận rằng cơ chế gán trọng số patch theo khả năng quan sát là
+một hướng cải tiến khả thi cho các mô hình ReID dựa trên Transformer. Trong các
+bước tiếp theo, nghiên cứu có thể được mở rộng bằng cách đánh giá thêm trên
+DukeMTMC-reID, thực hiện thí nghiệm đa seed để kiểm tra độ ổn định thống kê, và
+kết hợp ưu điểm của cơ chế hiệu chỉnh residual có cổng với các thành phần tăng
+cường của OVTF để tiếp tục cải thiện khả năng tổng quát hóa của mô hình.

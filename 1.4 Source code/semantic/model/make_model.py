@@ -1,0 +1,1196 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from .backbones.resnet import ResNet, Bottleneck
+import copy
+from .backbones.vit_pytorch import vit_base_patch16_224_TransReID, vit_small_patch16_224_TransReID, deit_small_patch16_224_TransReID
+from loss.metric_learning import Arcface, Cosface, AMSoftmax, CircleLoss
+
+def shuffle_unit(features, shift, group, begin=1):
+
+    batchsize = features.size(0)
+    dim = features.size(-1)
+    # Shift Operation
+    feature_random = torch.cat([features[:, begin-1+shift:], features[:, begin:begin-1+shift]], dim=1)
+    x = feature_random
+    # Patch Shuffle Operation
+    try:
+        x = x.view(batchsize, group, -1, dim)
+    except:
+        x = torch.cat([x, x[:, -2:-1, :]], dim=1)
+        x = x.view(batchsize, group, -1, dim)
+
+    x = torch.transpose(x, 1, 2).contiguous()
+    x = x.view(batchsize, -1, dim)
+
+    return x
+
+def weights_init_kaiming(m):
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.kaiming_normal_(m.weight, a=0, mode='fan_out')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0.0)
+
+    elif classname.find('Conv') != -1:
+        nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0.0)
+    elif classname.find('BatchNorm') != -1:
+        if m.affine:
+            nn.init.constant_(m.weight, 1.0)
+            nn.init.constant_(m.bias, 0.0)
+
+def weights_init_classifier(m):
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.normal_(m.weight, std=0.001)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0.0)
+
+
+def build_deformable_kwargs(cfg, exclude_last=False):
+    return {
+        "deformable_enabled": cfg.MODEL.DEFORMABLE_ATTN.ENABLED,
+        "deformable_start_layer": cfg.MODEL.DEFORMABLE_ATTN.START_LAYER,
+        "deformable_num_points": cfg.MODEL.DEFORMABLE_ATTN.N_POINTS,
+        "deformable_offset_scale": cfg.MODEL.DEFORMABLE_ATTN.OFFSET_SCALE,
+        "deformable_exclude_last": exclude_last,
+    }
+
+
+def enhance_patch_tokens(patch_tokens, patch_weights, topk_ratio, enrich_scale, eps, use_topk_only=False):
+    if patch_weights is None:
+        return {
+            "global_feat": None,
+            "enriched_patch_tokens": patch_tokens,
+            "visible_prototype": None,
+            "selection_mask": None,
+            "selected_indices": None,
+        }
+
+    patch_scores = patch_weights.squeeze(-1)
+    num_tokens = patch_tokens.size(1)
+    topk = max(1, min(num_tokens, int(round(num_tokens * topk_ratio))))
+    topk_scores, topk_indices = torch.topk(patch_scores, k=topk, dim=1, largest=True, sorted=False)
+    gather_index = topk_indices.unsqueeze(-1).expand(-1, -1, patch_tokens.size(-1))
+    topk_tokens = torch.gather(patch_tokens, 1, gather_index)
+    topk_attention = torch.softmax(topk_scores, dim=1).unsqueeze(-1)
+    visible_prototype = (topk_attention * topk_tokens).sum(dim=1)
+
+    enriched_patch_tokens = patch_tokens + enrich_scale * patch_weights * visible_prototype.unsqueeze(1)
+
+    selection_mask = torch.zeros_like(patch_scores)
+    selection_mask.scatter_(1, topk_indices, 1.0)
+
+    if use_topk_only:
+        normalized_weights = patch_weights * selection_mask.unsqueeze(-1)
+    else:
+        normalized_weights = patch_weights
+
+    global_feat = (normalized_weights * enriched_patch_tokens).sum(dim=1) / (normalized_weights.sum(dim=1) + eps)
+
+    return {
+        "global_feat": global_feat,
+        "enriched_patch_tokens": enriched_patch_tokens,
+        "visible_prototype": visible_prototype,
+        "selection_mask": selection_mask,
+        "selected_indices": topk_indices,
+    }
+
+
+class PatchReliabilityModeling(nn.Module):
+    def __init__(self, dim, hidden_dim, use_softmax=False, fusion_alpha=0.25, gate_init=-2.0):
+        super().__init__()
+        self.use_softmax = use_softmax
+        self.fusion_alpha = fusion_alpha
+        self.reliability_head = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.gate_head = nn.Sequential(
+            nn.Linear(dim * 3, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.reliability_head.apply(weights_init_kaiming)
+        self.gate_head.apply(weights_init_kaiming)
+        nn.init.constant_(self.gate_head[-1].weight, 0.0)
+        nn.init.constant_(self.gate_head[-1].bias, gate_init)
+
+    def forward(self, base_global_feat, patch_tokens):
+        reliability_logits = self.reliability_head(patch_tokens).squeeze(-1)
+        reliability_scores = torch.sigmoid(reliability_logits)
+        if self.use_softmax:
+            reliability_weights = F.softmax(reliability_logits, dim=1)
+        else:
+            reliability_scores_fp32 = reliability_scores.float().clamp(min=1e-4, max=1.0)
+            reliability_weights = reliability_scores_fp32 / (
+                reliability_scores_fp32.sum(dim=1, keepdim=True) + 1e-6
+            )
+            reliability_weights = reliability_weights.to(patch_tokens.dtype)
+
+        reliability_feat = torch.sum(reliability_weights.unsqueeze(-1) * patch_tokens.float(), dim=1)
+        reliability_feat = reliability_feat.to(patch_tokens.dtype)
+        gate_input = torch.cat(
+            [base_global_feat, reliability_feat, torch.abs(base_global_feat - reliability_feat)],
+            dim=1
+        )
+        reliability_gate = torch.sigmoid(self.gate_head(gate_input))
+        fused_feat = base_global_feat + self.fusion_alpha * reliability_gate * (reliability_feat - base_global_feat)
+
+        return fused_feat, {
+            "base_global_feat": base_global_feat,
+            "fused_global_feat": fused_feat,
+            "reliability_feat": reliability_feat,
+            "reliability_logits": reliability_logits,
+            "patch_reliability": reliability_scores,
+            "patch_weights": reliability_weights,
+            "reliability_gate": reliability_gate.squeeze(-1),
+        }
+
+
+def aggregate_patch_weights_to_local_branches(patch_weights, divide_length, rearrange, shift_num, shuffle_groups):
+    local_weight_tokens = patch_weights.unsqueeze(-1)
+    if rearrange:
+        local_weight_tokens = shuffle_unit(local_weight_tokens, shift_num, shuffle_groups)
+
+    patch_count = local_weight_tokens.size(1)
+    patch_length = patch_count // divide_length
+    branch_weights = []
+    for branch_idx in range(divide_length):
+        start = branch_idx * patch_length
+        end = patch_count if branch_idx == divide_length - 1 else (branch_idx + 1) * patch_length
+        branch_weight = local_weight_tokens[:, start:end, 0].mean(dim=1)
+        branch_weights.append(branch_weight)
+
+    local_branch_weights = torch.stack(branch_weights, dim=1)
+    local_branch_weights = local_branch_weights / (local_branch_weights.sum(dim=1, keepdim=True) + 1e-6)
+    return local_branch_weights
+
+
+class SemanticAlignmentHead(nn.Module):
+    def __init__(self, dim, patch_grid, cfg):
+        super().__init__()
+        self.num_parts = cfg.MODEL.SEM_ALIGN.NUM_PARTS
+        self.patch_grid = patch_grid
+        self.mask_size = tuple(cfg.INPUT.SIZE_TRAIN)
+        self.visible_threshold = cfg.MODEL.SEM_ALIGN.VISIBLE_THRESHOLD
+        self.eps = cfg.MODEL.SEM_ALIGN.EPS
+        self.detach_reference = cfg.MODEL.SEM_ALIGN.DETACH_REFERENCE
+        self.pixel_decoder_enabled = cfg.MODEL.SEM_ALIGN.PIXEL_DECODER_ENABLED
+        score_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.SCORE_HIDDEN_DIM_RATIO)
+        patch_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.PATCH_HIDDEN_DIM_RATIO)
+        pixel_decoder_hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.PIXEL_DECODER_HIDDEN_DIM_RATIO)
+
+        self.part_score_head = nn.Sequential(
+            nn.Linear(dim, score_hidden_dim),
+            nn.GELU(),
+            nn.Linear(score_hidden_dim, self.num_parts),
+            nn.Softplus()
+        )
+        self.main_proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim)
+        )
+        self.ref_proj = nn.LayerNorm(dim, elementwise_affine=False)
+        self.patch_classifier = nn.Sequential(
+            nn.Linear(dim, patch_hidden_dim),
+            nn.GELU(),
+            nn.Linear(patch_hidden_dim, self.num_parts + 1)
+        )
+        self.pixel_decoder = SemanticPixelDecoder(
+            dim=dim,
+            hidden_dim=pixel_decoder_hidden_dim,
+            num_classes=self.num_parts + 1,
+            patch_grid=self.patch_grid,
+            output_size=self.mask_size,
+        ) if self.pixel_decoder_enabled else None
+
+        self.part_score_head.apply(weights_init_kaiming)
+        self.main_proj.apply(weights_init_kaiming)
+        self.patch_classifier.apply(weights_init_kaiming)
+
+    def _build_part_masks(self, semantic_masks, device):
+        semantic_masks = semantic_masks.to(device=device, dtype=torch.long)
+        resized_masks = F.interpolate(
+            semantic_masks.unsqueeze(1).float(),
+            size=self.patch_grid,
+            mode='nearest'
+        ).long().squeeze(1)
+        part_masks = [
+            (resized_masks == part_index).float()
+            for part_index in range(1, self.num_parts + 1)
+        ]
+        part_masks = torch.stack(part_masks, dim=1).flatten(2)
+        visible_mask = part_masks.sum(dim=-1) >= self.visible_threshold
+        return part_masks, visible_mask, resized_masks
+
+    def _build_patch_targets(self, semantic_masks):
+        semantic_masks = semantic_masks.clamp(0, self.num_parts)
+        one_hot_masks = F.one_hot(semantic_masks, num_classes=self.num_parts + 1).permute(0, 3, 1, 2).float()
+        patch_targets = F.adaptive_avg_pool2d(one_hot_masks, self.patch_grid)
+        patch_targets = patch_targets.permute(0, 2, 3, 1).reshape(-1, self.patch_grid[0] * self.patch_grid[1], self.num_parts + 1)
+        patch_targets = patch_targets / patch_targets.sum(dim=-1, keepdim=True).clamp_min(self.eps)
+        return patch_targets
+
+    def _pool_main_tokens(self, patch_tokens, part_masks):
+        patch_scores = self.part_score_head(patch_tokens).permute(0, 2, 1) + self.eps
+        part_weights = part_masks * patch_scores
+        semantic_tokens = torch.einsum('bkn,bnd->bkd', part_weights, patch_tokens)
+        semantic_tokens = semantic_tokens / (part_weights.sum(dim=-1, keepdim=True) + self.eps)
+        normalized_weights = part_weights / (part_weights.sum(dim=-1, keepdim=True) + self.eps)
+        return semantic_tokens, normalized_weights
+
+    def _pool_reference_tokens(self, patch_tokens, part_masks):
+        part_weights = part_masks
+        reference_tokens = torch.einsum('bkn,bnd->bkd', part_weights, patch_tokens)
+        reference_tokens = reference_tokens / (part_weights.sum(dim=-1, keepdim=True) + self.eps)
+        return reference_tokens
+
+    def forward(self, patch_tokens, reference_patch_tokens, semantic_masks):
+        part_masks, visible_mask, resized_masks = self._build_part_masks(semantic_masks, patch_tokens.device)
+        semantic_tokens, semantic_pool_weights = self._pool_main_tokens(patch_tokens, part_masks)
+        semantic_raw_tokens = semantic_tokens
+
+        semantic_reference_tokens = None
+        if reference_patch_tokens is not None:
+            if self.detach_reference:
+                reference_patch_tokens = reference_patch_tokens.detach()
+            semantic_reference_tokens = self._pool_reference_tokens(reference_patch_tokens, part_masks)
+        semantic_patch_targets = self._build_patch_targets(semantic_masks.to(device=patch_tokens.device, dtype=torch.long))
+        semantic_patch_logits = self.patch_classifier(patch_tokens)
+        semantic_pixel_logits = self.pixel_decoder(patch_tokens) if self.pixel_decoder is not None else None
+        semantic_pixel_targets = semantic_masks.to(device=patch_tokens.device, dtype=torch.long).clamp(0, self.num_parts)
+
+        return {
+            "semantic_raw_tokens": semantic_raw_tokens,
+            "semantic_tokens": self.main_proj(semantic_tokens),
+            "semantic_reference_tokens": self.ref_proj(semantic_reference_tokens) if semantic_reference_tokens is not None else None,
+            "semantic_visible_mask": visible_mask.float(),
+            "semantic_patch_labels": resized_masks.flatten(1),
+            "semantic_patch_targets": semantic_patch_targets,
+            "semantic_patch_logits": semantic_patch_logits,
+            "semantic_pixel_targets": semantic_pixel_targets,
+            "semantic_pixel_logits": semantic_pixel_logits,
+            "semantic_pool_weights": semantic_pool_weights,
+        }
+
+
+class SemanticPixelDecoder(nn.Module):
+    def __init__(self, dim, hidden_dim, num_classes, patch_grid, output_size):
+        super().__init__()
+        self.patch_grid = patch_grid
+        self.output_size = tuple(output_size)
+        self.decoder = nn.Sequential(
+            nn.Conv2d(dim, hidden_dim, kernel_size=1, bias=False),
+            nn.BatchNorm2d(hidden_dim),
+            nn.GELU(),
+            nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(hidden_dim),
+            nn.GELU(),
+            nn.Conv2d(hidden_dim, num_classes, kernel_size=1),
+        )
+        self.apply(weights_init_kaiming)
+
+    def forward(self, patch_tokens):
+        batch, num_tokens, dim = patch_tokens.shape
+        height, width = self.patch_grid
+        if num_tokens != height * width:
+            raise ValueError(
+                'Expected {} patch tokens for grid {}, but got {}.'.format(
+                    height * width, self.patch_grid, num_tokens
+                )
+            )
+        x = patch_tokens.transpose(1, 2).reshape(batch, dim, height, width)
+        logits = self.decoder(x)
+        return F.interpolate(logits, size=self.output_size, mode='bilinear', align_corners=False)
+
+
+class SemanticFusionBlock(nn.Module):
+    def __init__(self, dim, cfg):
+        super().__init__()
+        self.eps = cfg.MODEL.SEM_ALIGN.EPS
+        hidden_dim = max(1, dim // cfg.MODEL.SEM_ALIGN.FUSION_HIDDEN_DIM_RATIO)
+        self.semantic_proj = nn.Sequential(
+            nn.Linear(dim, dim, bias=False),
+            nn.LayerNorm(dim)
+        )
+        self.gate = nn.Sequential(
+            nn.Linear(dim * 2, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.semantic_proj.apply(weights_init_kaiming)
+        self.gate.apply(weights_init_kaiming)
+        nn.init.constant_(self.gate[-1].weight, 0.0)
+        nn.init.constant_(self.gate[-1].bias, -4.0)
+
+    def forward(self, global_feat, semantic_tokens, visible_mask, fusion_scale=1.0):
+        if semantic_tokens is None or visible_mask is None:
+            return global_feat, None, None
+
+        visible_weights = visible_mask.unsqueeze(-1)
+        semantic_global = (semantic_tokens * visible_weights).sum(dim=1)
+        semantic_global = semantic_global / (visible_weights.sum(dim=1) + self.eps)
+        semantic_global = self.semantic_proj(semantic_global)
+        fusion_gate = torch.sigmoid(self.gate(torch.cat([global_feat, semantic_global], dim=1)))
+        if not torch.is_tensor(fusion_scale):
+            fusion_scale = semantic_global.new_tensor(float(fusion_scale))
+        fused_global_feat = global_feat + fusion_scale * fusion_gate * semantic_global
+        return fused_global_feat, semantic_global, fusion_gate.squeeze(-1)
+
+
+class Backbone(nn.Module):
+    def __init__(self, num_classes, cfg):
+        super(Backbone, self).__init__()
+        last_stride = cfg.MODEL.LAST_STRIDE
+        model_path = cfg.MODEL.PRETRAIN_PATH
+        model_name = cfg.MODEL.NAME
+        pretrain_choice = cfg.MODEL.PRETRAIN_CHOICE
+        self.cos_layer = cfg.MODEL.COS_LAYER
+        self.neck = cfg.MODEL.NECK
+        self.neck_feat = cfg.TEST.NECK_FEAT
+
+        if model_name == 'resnet50':
+            self.in_planes = 2048
+            self.base = ResNet(last_stride=last_stride,
+                               block=Bottleneck,
+                               layers=[3, 4, 6, 3])
+            print('using resnet50 as a backbone')
+        else:
+            print('unsupported backbone! but got {}'.format(model_name))
+
+        if pretrain_choice == 'imagenet':
+            self.base.load_param(model_path)
+            print('Loading pretrained ImageNet model......from {}'.format(model_path))
+
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.num_classes = num_classes
+
+        self.classifier = nn.Linear(self.in_planes, self.num_classes, bias=False)
+        self.classifier.apply(weights_init_classifier)
+
+        self.bottleneck = nn.BatchNorm1d(self.in_planes)
+        self.bottleneck.bias.requires_grad_(False)
+        self.bottleneck.apply(weights_init_kaiming)
+
+    def forward(self, x, label=None):  # label is unused if self.cos_layer == 'no'
+        x = self.base(x)
+        global_feat = nn.functional.avg_pool2d(x, x.shape[2:4])
+        global_feat = global_feat.view(global_feat.shape[0], -1)  # flatten to (bs, 2048)
+
+        if self.neck == 'no':
+            feat = global_feat
+        elif self.neck == 'bnneck':
+            feat = self.bottleneck(global_feat)
+
+        if self.training:
+            if self.cos_layer:
+                cls_score = self.arcface(feat, label)
+            else:
+                cls_score = self.classifier(feat)
+            return cls_score, global_feat
+        else:
+            if self.neck_feat == 'after':
+                return feat
+            else:
+                return global_feat
+
+    def load_param(self, trained_path):
+        param_dict = torch.load(trained_path)
+        if 'state_dict' in param_dict:
+            param_dict = param_dict['state_dict']
+        for i in param_dict:
+            self.state_dict()[i].copy_(param_dict[i])
+        print('Loading pretrained model from {}'.format(trained_path))
+
+    def load_param_finetune(self, model_path):
+        param_dict = torch.load(model_path)
+        for i in param_dict:
+            self.state_dict()[i].copy_(param_dict[i])
+        print('Loading pretrained model for finetuning from {}'.format(model_path))
+
+
+class build_transformer(nn.Module):
+    def __init__(self, num_classes, camera_num, view_num, cfg, factory):
+        super(build_transformer, self).__init__()
+        model_path = cfg.MODEL.PRETRAIN_PATH
+        pretrain_choice = cfg.MODEL.PRETRAIN_CHOICE
+        self.neck_feat = cfg.TEST.NECK_FEAT
+        self.in_planes = 768
+        self.enable_patch_weight = cfg.MODEL.VIS_WEIGHT.ENABLED
+        self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
+        self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
+        self.enable_sem_align = cfg.MODEL.SEM_ALIGN.ENABLED
+        self.use_reliability_pipeline = cfg.MODEL.RELIABILITY_PIPELINE
+        self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align or self.use_reliability_pipeline
+        self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
+        self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
+        self.semantic_warmup_epochs = cfg.MODEL.SEM_ALIGN.WARMUP_EPOCHS
+        self.enable_semantic_fusion = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.FUSE_GLOBAL
+        self.semantic_needs_reference = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.LAMBDA_ALIGN > 0
+        self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
+        self.topk_ratio = cfg.MODEL.TOKEN_ENRICH.TOPK_RATIO
+        self.enrich_scale = cfg.MODEL.TOKEN_ENRICH.ENRICH_SCALE
+        self.use_topk_only = cfg.MODEL.TOKEN_ENRICH.USE_TOPK_ONLY
+
+        print('using Transformer_type: {} as a backbone'.format(cfg.MODEL.TRANSFORMER_TYPE))
+
+        if cfg.MODEL.SIE_CAMERA:
+            camera_num = camera_num
+        else:
+            camera_num = 0
+        if cfg.MODEL.SIE_VIEW:
+            view_num = view_num
+        else:
+            view_num = 0
+
+        self.base = factory[cfg.MODEL.TRANSFORMER_TYPE](img_size=cfg.INPUT.SIZE_TRAIN, sie_xishu=cfg.MODEL.SIE_COE,
+                                                        camera=camera_num, view=view_num, stride_size=cfg.MODEL.STRIDE_SIZE, drop_path_rate=cfg.MODEL.DROP_PATH,
+                                                        drop_rate= cfg.MODEL.DROP_OUT,
+                                                        attn_drop_rate=cfg.MODEL.ATT_DROP_RATE,
+                                                        **build_deformable_kwargs(cfg))
+        if cfg.MODEL.TRANSFORMER_TYPE == 'deit_small_patch16_224_TransReID':
+            self.in_planes = 384
+        self.patch_grid = (self.base.patch_embed.num_y, self.base.patch_embed.num_x)
+        if pretrain_choice == 'imagenet':
+            self.base.load_param(model_path)
+            print('Loading pretrained ImageNet model......from {}'.format(model_path))
+
+        self.num_classes = num_classes
+        self.ID_LOSS_TYPE = cfg.MODEL.ID_LOSS_TYPE
+        if self.ID_LOSS_TYPE == 'arcface':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE,cfg.SOLVER.COSINE_SCALE,cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = Arcface(self.in_planes, self.num_classes,
+                                      s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        elif self.ID_LOSS_TYPE == 'cosface':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE,cfg.SOLVER.COSINE_SCALE,cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = Cosface(self.in_planes, self.num_classes,
+                                      s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        elif self.ID_LOSS_TYPE == 'amsoftmax':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE,cfg.SOLVER.COSINE_SCALE,cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = AMSoftmax(self.in_planes, self.num_classes,
+                                        s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        elif self.ID_LOSS_TYPE == 'circle':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE, cfg.SOLVER.COSINE_SCALE, cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = CircleLoss(self.in_planes, self.num_classes,
+                                        s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        else:
+            self.classifier = nn.Linear(self.in_planes, self.num_classes, bias=False)
+            self.classifier.apply(weights_init_classifier)
+
+        self.bottleneck = nn.BatchNorm1d(self.in_planes)
+        self.bottleneck.bias.requires_grad_(False)
+        self.bottleneck.apply(weights_init_kaiming)
+
+        if self.enable_sem_align:
+            self.semantic_align_head = SemanticAlignmentHead(self.in_planes, self.patch_grid, cfg)
+        else:
+            self.semantic_align_head = None
+        self.semantic_fusion = SemanticFusionBlock(self.in_planes, cfg) if self.enable_semantic_fusion else None
+
+        if self.use_reliability_pipeline:
+            self.patch_reliability_modeling = PatchReliabilityModeling(
+                self.in_planes,
+                cfg.MODEL.REL_HIDDEN_DIM,
+                cfg.MODEL.REL_USE_SOFTMAX,
+                cfg.MODEL.REL_FUSION_ALPHA,
+                cfg.MODEL.REL_GATE_INIT,
+            )
+            print('using reliability-aware patch modeling with fusion alpha:{}'.format(cfg.MODEL.REL_FUSION_ALPHA))
+        else:
+            self.patch_reliability_modeling = None
+
+        if self.use_patch_scorer:
+            hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
+            self.patch_weight_head = nn.Sequential(
+                nn.Linear(self.in_planes, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, 1),
+                nn.Sigmoid()
+            )
+            self.patch_weight_head.apply(weights_init_kaiming)
+        else:
+            self.patch_weight_head = None
+
+        if self.enable_local_group:
+            if len(self.local_row_bounds) != 4:
+                raise ValueError('MODEL.LOCAL_GROUP.ROW_BOUNDS must contain 4 values for 3 regions.')
+            if self.local_row_bounds[0] != 0 or self.local_row_bounds[-1] != self.patch_grid[0]:
+                raise ValueError(
+                    'Local grouping row bounds {} do not match patch grid height {}.'.format(
+                        self.local_row_bounds, self.patch_grid[0]
+                    )
+                )
+            self.bottleneck_up = self._build_bnneck()
+            self.bottleneck_mid = self._build_bnneck()
+            self.bottleneck_low = self._build_bnneck()
+            self.classifier_up = self._build_linear_classifier()
+            self.classifier_mid = self._build_linear_classifier()
+            self.classifier_low = self._build_linear_classifier()
+
+    def _build_bnneck(self):
+        bottleneck = nn.BatchNorm1d(self.in_planes)
+        bottleneck.bias.requires_grad_(False)
+        bottleneck.apply(weights_init_kaiming)
+        return bottleneck
+
+    def _build_linear_classifier(self):
+        classifier = nn.Linear(self.in_planes, self.num_classes, bias=False)
+        classifier.apply(weights_init_classifier)
+        return classifier
+
+    def _apply_global_classifier(self, feat, label):
+        if self.ID_LOSS_TYPE in ('arcface', 'cosface', 'amsoftmax', 'circle'):
+            return self.classifier(feat, label)
+        return self.classifier(feat)
+
+    def _get_patch_weights(self, patch_tokens, epoch):
+        if not self.use_patch_scorer:
+            return None
+
+        if self.training and epoch is not None and epoch <= self.patch_weight_warmup_epochs:
+            return torch.ones(
+                patch_tokens.size(0), patch_tokens.size(1), 1,
+                device=patch_tokens.device, dtype=patch_tokens.dtype
+            )
+
+        return self.patch_weight_head(patch_tokens)
+
+    def _pool_local_regions(self, patch_tokens):
+        batch, _, dim = patch_tokens.shape
+        patch_tokens = patch_tokens.reshape(batch, self.patch_grid[0], self.patch_grid[1], dim)
+        local_feats = []
+        for start_row, end_row in zip(self.local_row_bounds[:-1], self.local_row_bounds[1:]):
+            region_tokens = patch_tokens[:, start_row:end_row, :, :].reshape(batch, -1, dim)
+            local_feats.append(region_tokens.mean(dim=1))
+        return local_feats
+
+    def _compute_semantic_outputs(self, patch_tokens, reference_patch_tokens, semantic_masks):
+        if not self.enable_sem_align:
+            return {}
+        if semantic_masks is None:
+            if self.training:
+                raise ValueError('Semantic alignment is enabled but semantic masks were not provided by the dataloader.')
+            return {}
+        return self.semantic_align_head(patch_tokens, reference_patch_tokens, semantic_masks)
+
+    def _get_semantic_loss_scale(self, epoch):
+        if not self.enable_sem_align:
+            return 0.0
+        if epoch is None or self.semantic_warmup_epochs <= 0:
+            return 1.0
+        return min(1.0, float(epoch) / float(self.semantic_warmup_epochs))
+
+    def _fuse_semantic_features(self, global_feat, semantic_outputs, epoch):
+        if self.semantic_fusion is None or not semantic_outputs:
+            return global_feat, None, None
+        fusion_scale = self._get_semantic_loss_scale(epoch) if self.training else 1.0
+        return self.semantic_fusion(
+            global_feat,
+            semantic_outputs.get("semantic_raw_tokens", semantic_outputs.get("semantic_tokens")),
+            semantic_outputs.get("semantic_visible_mask"),
+            fusion_scale=fusion_scale,
+        )
+
+    def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False, semantic_masks=None):
+        if not self.token_branch_enabled:
+            global_feat = self.base(x, cam_label=cam_label, view_label=view_label)
+            feat = self.bottleneck(global_feat)
+
+            if self.training:
+                cls_score = self._apply_global_classifier(feat, label)
+                return cls_score, global_feat
+
+            if self.neck_feat == 'after':
+                return feat
+            return global_feat
+
+        if self.enable_sem_align and self.semantic_needs_reference:
+            token_features, reference_features = self.base(
+                x,
+                cam_label=cam_label,
+                view_label=view_label,
+                return_all_tokens=True,
+                return_pre_final_tokens=True
+            )
+            reference_patch_tokens = reference_features[:, 1:]
+        elif self.enable_sem_align:
+            token_features = self.base(x, cam_label=cam_label, view_label=view_label, return_all_tokens=True)
+            reference_patch_tokens = None
+        else:
+            token_features = self.base(x, cam_label=cam_label, view_label=view_label, return_all_tokens=True)
+            reference_patch_tokens = None
+        cls_token = token_features[:, 0]
+        patch_tokens = token_features[:, 1:]
+        patch_weights = self._get_patch_weights(patch_tokens, epoch)
+
+        patch_context = enhance_patch_tokens(
+            patch_tokens,
+            patch_weights,
+            topk_ratio=self.topk_ratio,
+            enrich_scale=self.enrich_scale if self.enable_token_enrich else 0.0,
+            eps=self.patch_weight_eps,
+            use_topk_only=self.use_topk_only,
+        )
+
+        if patch_context["global_feat"] is None:
+            global_feat = cls_token
+            enriched_patch_tokens = patch_tokens
+            visible_prototype = None
+            selection_mask = None
+            selected_indices = None
+        else:
+            global_feat = patch_context["global_feat"]
+            enriched_patch_tokens = patch_context["enriched_patch_tokens"]
+            visible_prototype = patch_context["visible_prototype"]
+            selection_mask = patch_context["selection_mask"]
+            selected_indices = patch_context["selected_indices"]
+
+        reliability_outputs = {}
+        if self.patch_reliability_modeling is not None:
+            global_feat, reliability_outputs = self.patch_reliability_modeling(cls_token, patch_tokens)
+            reliability_outputs["patch_grid"] = self.patch_grid
+
+        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
+        if semantic_outputs:
+            semantic_outputs["semantic_loss_scale"] = patch_tokens.new_tensor(self._get_semantic_loss_scale(epoch))
+        fused_global_feat, semantic_global_feat, semantic_fusion_gate = self._fuse_semantic_features(global_feat, semantic_outputs, epoch)
+        if semantic_outputs:
+            semantic_outputs["semantic_global_feat"] = semantic_global_feat
+            semantic_outputs["semantic_fusion_gate"] = semantic_fusion_gate
+
+        global_bn_feat = self.bottleneck(fused_global_feat)
+        local_feats = []
+        local_bn_feats = []
+        local_logits = []
+
+        if self.enable_local_group:
+            local_feats = self._pool_local_regions(patch_tokens)
+            local_bn_feats = [
+                self.bottleneck_up(local_feats[0]),
+                self.bottleneck_mid(local_feats[1]),
+                self.bottleneck_low(local_feats[2])
+            ]
+            if self.training:
+                local_logits = [
+                    self.classifier_up(local_bn_feats[0]),
+                    self.classifier_mid(local_bn_feats[1]),
+                    self.classifier_low(local_bn_feats[2])
+                ]
+
+        if self.training:
+            outputs = {
+                "global_feat": fused_global_feat,
+                "global_bn_feat": global_bn_feat,
+                "global_logits": self._apply_global_classifier(global_bn_feat, label),
+                "raw_global_feat": global_feat,
+                "local_feats": local_feats,
+                "local_bn_feats": local_bn_feats,
+                "local_logits": local_logits,
+                "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
+                "patch_tokens": patch_tokens,
+                "enriched_patch_tokens": enriched_patch_tokens,
+                "visible_prototype": visible_prototype,
+                "selection_mask": selection_mask,
+                "selected_indices": selected_indices,
+            }
+            outputs.update(reliability_outputs)
+            outputs.update(semantic_outputs)
+            return outputs
+
+        retrieval_feat = global_bn_feat if self.neck_feat == 'after' else fused_global_feat
+        if return_feature_dict:
+            feature_dict = {
+                "retrieval_feat": retrieval_feat,
+                "global_feat": fused_global_feat,
+                "global_bn_feat": global_bn_feat,
+                "raw_global_feat": global_feat,
+                "local_feats": local_feats,
+                "local_bn_feats": local_bn_feats,
+                "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
+                "patch_tokens": patch_tokens,
+                "enriched_patch_tokens": enriched_patch_tokens,
+                "visible_prototype": visible_prototype,
+                "selection_mask": selection_mask,
+                "selected_indices": selected_indices,
+            }
+            feature_dict.update(reliability_outputs)
+            if semantic_outputs:
+                feature_dict.update(semantic_outputs)
+            return feature_dict
+        return retrieval_feat
+
+    def load_param(self, trained_path):
+        param_dict = torch.load(trained_path)
+        for i in param_dict:
+            self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
+        print('Loading pretrained model from {}'.format(trained_path))
+
+    def load_param_finetune(self, model_path):
+        param_dict = torch.load(model_path)
+        for i in param_dict:
+            self.state_dict()[i].copy_(param_dict[i])
+        print('Loading pretrained model for finetuning from {}'.format(model_path))
+
+
+class build_transformer_local(nn.Module):
+    def __init__(self, num_classes, camera_num, view_num, cfg, factory, rearrange):
+        super(build_transformer_local, self).__init__()
+        model_path = cfg.MODEL.PRETRAIN_PATH
+        pretrain_choice = cfg.MODEL.PRETRAIN_CHOICE
+        self.cos_layer = cfg.MODEL.COS_LAYER
+        self.neck = cfg.MODEL.NECK
+        self.neck_feat = cfg.TEST.NECK_FEAT
+        self.use_jpm_infer_fusion = cfg.TEST.USE_JPM_FUSION
+        self.in_planes = 768
+        self.enable_patch_weight = cfg.MODEL.VIS_WEIGHT.ENABLED
+        self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
+        self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
+        self.enable_sem_align = cfg.MODEL.SEM_ALIGN.ENABLED
+        self.use_reliability_pipeline = cfg.MODEL.RELIABILITY_PIPELINE
+        self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align or self.use_reliability_pipeline
+        self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
+        self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
+        self.semantic_warmup_epochs = cfg.MODEL.SEM_ALIGN.WARMUP_EPOCHS
+        self.enable_semantic_fusion = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.FUSE_GLOBAL
+        self.semantic_needs_reference = self.enable_sem_align and cfg.MODEL.SEM_ALIGN.LAMBDA_ALIGN > 0
+        self.local_row_bounds = list(cfg.MODEL.LOCAL_GROUP.ROW_BOUNDS)
+        self.topk_ratio = cfg.MODEL.TOKEN_ENRICH.TOPK_RATIO
+        self.enrich_scale = cfg.MODEL.TOKEN_ENRICH.ENRICH_SCALE
+        self.use_topk_only = cfg.MODEL.TOKEN_ENRICH.USE_TOPK_ONLY
+
+        print('using Transformer_type: {} as a backbone'.format(cfg.MODEL.TRANSFORMER_TYPE))
+
+        if cfg.MODEL.SIE_CAMERA:
+            camera_num = camera_num
+        else:
+            camera_num = 0
+
+        if cfg.MODEL.SIE_VIEW:
+            view_num = view_num
+        else:
+            view_num = 0
+
+        self.base = factory[cfg.MODEL.TRANSFORMER_TYPE](
+            img_size=cfg.INPUT.SIZE_TRAIN,
+            sie_xishu=cfg.MODEL.SIE_COE,
+            local_feature=cfg.MODEL.JPM,
+            camera=camera_num,
+            view=view_num,
+            stride_size=cfg.MODEL.STRIDE_SIZE,
+            drop_path_rate=cfg.MODEL.DROP_PATH,
+            drop_rate=cfg.MODEL.DROP_OUT,
+            attn_drop_rate=cfg.MODEL.ATT_DROP_RATE,
+            **build_deformable_kwargs(cfg, exclude_last=True)
+        )
+        self.patch_grid = (self.base.patch_embed.num_y, self.base.patch_embed.num_x)
+
+        if pretrain_choice == 'imagenet':
+            self.base.load_param(model_path)
+            print('Loading pretrained ImageNet model......from {}'.format(model_path))
+
+        block = self.base.blocks[-1]
+        layer_norm = self.base.norm
+        self.b1 = nn.Sequential(
+            copy.deepcopy(block),
+            copy.deepcopy(layer_norm)
+        )
+        self.b2 = nn.Sequential(
+            copy.deepcopy(block),
+            copy.deepcopy(layer_norm)
+        )
+
+        self.num_classes = num_classes
+        self.ID_LOSS_TYPE = cfg.MODEL.ID_LOSS_TYPE
+        if self.ID_LOSS_TYPE == 'arcface':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE,cfg.SOLVER.COSINE_SCALE,cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = Arcface(self.in_planes, self.num_classes,
+                                      s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        elif self.ID_LOSS_TYPE == 'cosface':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE,cfg.SOLVER.COSINE_SCALE,cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = Cosface(self.in_planes, self.num_classes,
+                                      s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        elif self.ID_LOSS_TYPE == 'amsoftmax':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE,cfg.SOLVER.COSINE_SCALE,cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = AMSoftmax(self.in_planes, self.num_classes,
+                                        s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        elif self.ID_LOSS_TYPE == 'circle':
+            print('using {} with s:{}, m: {}'.format(self.ID_LOSS_TYPE, cfg.SOLVER.COSINE_SCALE, cfg.SOLVER.COSINE_MARGIN))
+            self.classifier = CircleLoss(self.in_planes, self.num_classes,
+                                        s=cfg.SOLVER.COSINE_SCALE, m=cfg.SOLVER.COSINE_MARGIN)
+        else:
+            self.classifier = nn.Linear(self.in_planes, self.num_classes, bias=False)
+            self.classifier.apply(weights_init_classifier)
+            self.classifier_1 = nn.Linear(self.in_planes, self.num_classes, bias=False)
+            self.classifier_1.apply(weights_init_classifier)
+            self.classifier_2 = nn.Linear(self.in_planes, self.num_classes, bias=False)
+            self.classifier_2.apply(weights_init_classifier)
+            self.classifier_3 = nn.Linear(self.in_planes, self.num_classes, bias=False)
+            self.classifier_3.apply(weights_init_classifier)
+            self.classifier_4 = nn.Linear(self.in_planes, self.num_classes, bias=False)
+            self.classifier_4.apply(weights_init_classifier)
+
+        self.bottleneck = nn.BatchNorm1d(self.in_planes)
+        self.bottleneck.bias.requires_grad_(False)
+        self.bottleneck.apply(weights_init_kaiming)
+        self.bottleneck_1 = nn.BatchNorm1d(self.in_planes)
+        self.bottleneck_1.bias.requires_grad_(False)
+        self.bottleneck_1.apply(weights_init_kaiming)
+        self.bottleneck_2 = nn.BatchNorm1d(self.in_planes)
+        self.bottleneck_2.bias.requires_grad_(False)
+        self.bottleneck_2.apply(weights_init_kaiming)
+        self.bottleneck_3 = nn.BatchNorm1d(self.in_planes)
+        self.bottleneck_3.bias.requires_grad_(False)
+        self.bottleneck_3.apply(weights_init_kaiming)
+        self.bottleneck_4 = nn.BatchNorm1d(self.in_planes)
+        self.bottleneck_4.bias.requires_grad_(False)
+        self.bottleneck_4.apply(weights_init_kaiming)
+
+        if self.enable_sem_align:
+            self.semantic_align_head = SemanticAlignmentHead(self.in_planes, self.patch_grid, cfg)
+        else:
+            self.semantic_align_head = None
+        self.semantic_fusion = SemanticFusionBlock(self.in_planes, cfg) if self.enable_semantic_fusion else None
+
+        if self.use_reliability_pipeline:
+            self.patch_reliability_modeling = PatchReliabilityModeling(
+                self.in_planes,
+                cfg.MODEL.REL_HIDDEN_DIM,
+                cfg.MODEL.REL_USE_SOFTMAX,
+                cfg.MODEL.REL_FUSION_ALPHA,
+                cfg.MODEL.REL_GATE_INIT,
+            )
+            print('using reliability-aware local patch modeling with fusion alpha:{}'.format(cfg.MODEL.REL_FUSION_ALPHA))
+        else:
+            self.patch_reliability_modeling = None
+
+        if self.use_patch_scorer:
+            hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
+            self.patch_weight_head = nn.Sequential(
+                nn.Linear(self.in_planes, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, 1),
+                nn.Sigmoid()
+            )
+            self.patch_weight_head.apply(weights_init_kaiming)
+        else:
+            self.patch_weight_head = None
+
+        if self.enable_local_group:
+            if len(self.local_row_bounds) != 4:
+                raise ValueError('MODEL.LOCAL_GROUP.ROW_BOUNDS must contain 4 values for 3 regions.')
+            if self.local_row_bounds[0] != 0 or self.local_row_bounds[-1] != self.patch_grid[0]:
+                raise ValueError(
+                    'Local grouping row bounds {} do not match patch grid height {}.'.format(
+                        self.local_row_bounds, self.patch_grid[0]
+                    )
+                )
+            self.bottleneck_up = self._build_bnneck()
+            self.bottleneck_mid = self._build_bnneck()
+            self.bottleneck_low = self._build_bnneck()
+            self.classifier_up = self._build_linear_classifier()
+            self.classifier_mid = self._build_linear_classifier()
+            self.classifier_low = self._build_linear_classifier()
+
+        self.shuffle_groups = cfg.MODEL.SHUFFLE_GROUP
+        print('using shuffle_groups size:{}'.format(self.shuffle_groups))
+        self.shift_num = cfg.MODEL.SHIFT_NUM
+        print('using shift_num size:{}'.format(self.shift_num))
+        self.divide_length = cfg.MODEL.DEVIDE_LENGTH
+        print('using divide_length size:{}'.format(self.divide_length))
+        self.rearrange = rearrange
+
+    def _build_bnneck(self):
+        bottleneck = nn.BatchNorm1d(self.in_planes)
+        bottleneck.bias.requires_grad_(False)
+        bottleneck.apply(weights_init_kaiming)
+        return bottleneck
+
+    def _build_linear_classifier(self):
+        classifier = nn.Linear(self.in_planes, self.num_classes, bias=False)
+        classifier.apply(weights_init_classifier)
+        return classifier
+
+    def _get_patch_weights(self, patch_tokens, epoch):
+        if not self.use_patch_scorer:
+            return None
+
+        if self.training and epoch is not None and epoch <= self.patch_weight_warmup_epochs:
+            return torch.ones(
+                patch_tokens.size(0), patch_tokens.size(1), 1,
+                device=patch_tokens.device, dtype=patch_tokens.dtype
+            )
+
+        return self.patch_weight_head(patch_tokens)
+
+    def _pool_local_regions(self, patch_tokens):
+        batch, _, dim = patch_tokens.shape
+        patch_tokens = patch_tokens.reshape(batch, self.patch_grid[0], self.patch_grid[1], dim)
+        local_feats = []
+        for start_row, end_row in zip(self.local_row_bounds[:-1], self.local_row_bounds[1:]):
+            region_tokens = patch_tokens[:, start_row:end_row, :, :].reshape(batch, -1, dim)
+            local_feats.append(region_tokens.mean(dim=1))
+        return local_feats
+
+    def _compute_semantic_outputs(self, patch_tokens, reference_patch_tokens, semantic_masks):
+        if not self.enable_sem_align:
+            return {}
+        if semantic_masks is None:
+            if self.training:
+                raise ValueError('Semantic alignment is enabled but semantic masks were not provided by the dataloader.')
+            return {}
+        return self.semantic_align_head(patch_tokens, reference_patch_tokens, semantic_masks)
+
+    def _get_semantic_loss_scale(self, epoch):
+        if not self.enable_sem_align:
+            return 0.0
+        if epoch is None or self.semantic_warmup_epochs <= 0:
+            return 1.0
+        return min(1.0, float(epoch) / float(self.semantic_warmup_epochs))
+
+    def _fuse_semantic_features(self, global_feat, semantic_outputs, epoch):
+        if self.semantic_fusion is None or not semantic_outputs:
+            return global_feat, None, None
+        fusion_scale = self._get_semantic_loss_scale(epoch) if self.training else 1.0
+        return self.semantic_fusion(
+            global_feat,
+            semantic_outputs.get("semantic_raw_tokens", semantic_outputs.get("semantic_tokens")),
+            semantic_outputs.get("semantic_visible_mask"),
+            fusion_scale=fusion_scale,
+        )
+
+    def forward(self, x, label=None, cam_label= None, view_label=None, epoch=None, return_feature_dict=False, semantic_masks=None):  # label is unused if self.cos_layer == 'no'
+
+        features = self.base(x, cam_label=cam_label, view_label=view_label)
+        reference_patch_tokens = self.base.norm(features)[:, 1:] if self.semantic_needs_reference else None
+
+        # global branch
+        b1_feat = self.b1(features) # [64, 129, 768]
+        patch_tokens = b1_feat[:, 1:]
+        patch_weights = self._get_patch_weights(patch_tokens, epoch)
+        patch_context = enhance_patch_tokens(
+            patch_tokens,
+            patch_weights,
+            topk_ratio=self.topk_ratio,
+            enrich_scale=self.enrich_scale if self.enable_token_enrich else 0.0,
+            eps=self.patch_weight_eps,
+            use_topk_only=self.use_topk_only,
+        )
+        if patch_context["global_feat"] is None:
+            weighted_global_feat = b1_feat[:, 0]
+            enriched_patch_tokens = patch_tokens
+            visible_prototype = None
+            selection_mask = None
+            selected_indices = None
+        else:
+            weighted_global_feat = patch_context["global_feat"]
+            enriched_patch_tokens = patch_context["enriched_patch_tokens"]
+            visible_prototype = patch_context["visible_prototype"]
+            selection_mask = patch_context["selection_mask"]
+            selected_indices = patch_context["selected_indices"]
+
+        reliability_outputs = {}
+        if self.patch_reliability_modeling is not None:
+            weighted_global_feat, reliability_outputs = self.patch_reliability_modeling(b1_feat[:, 0], patch_tokens)
+            reliability_outputs["patch_grid"] = self.patch_grid
+
+        # JPM branch
+        feature_length = features.size(1) - 1
+        patch_length = feature_length // self.divide_length
+        token = features[:, 0:1]
+
+        if self.rearrange:
+            x = shuffle_unit(features, self.shift_num, self.shuffle_groups)
+        else:
+            x = features[:, 1:]
+        # lf_1
+        b1_local_feat = x[:, :patch_length]
+        b1_local_feat = self.b2(torch.cat((token, b1_local_feat), dim=1))
+        local_feat_1 = b1_local_feat[:, 0]
+
+        # lf_2
+        b2_local_feat = x[:, patch_length:patch_length*2]
+        b2_local_feat = self.b2(torch.cat((token, b2_local_feat), dim=1))
+        local_feat_2 = b2_local_feat[:, 0]
+
+        # lf_3
+        b3_local_feat = x[:, patch_length*2:patch_length*3]
+        b3_local_feat = self.b2(torch.cat((token, b3_local_feat), dim=1))
+        local_feat_3 = b3_local_feat[:, 0]
+
+        # lf_4
+        b4_local_feat = x[:, patch_length*3:patch_length*4]
+        b4_local_feat = self.b2(torch.cat((token, b4_local_feat), dim=1))
+        local_feat_4 = b4_local_feat[:, 0]
+
+        if reliability_outputs:
+            local_weights = aggregate_patch_weights_to_local_branches(
+                reliability_outputs["patch_weights"],
+                self.divide_length,
+                self.rearrange,
+                self.shift_num,
+                self.shuffle_groups,
+            )
+            local_scale = local_weights * self.divide_length
+            local_feat_1 = local_feat_1 * local_scale[:, 0:1]
+            local_feat_2 = local_feat_2 * local_scale[:, 1:2]
+            local_feat_3 = local_feat_3 * local_scale[:, 2:3]
+            local_feat_4 = local_feat_4 * local_scale[:, 3:4]
+            reliability_outputs["local_weights"] = local_weights
+            reliability_outputs["local_scale"] = local_scale
+
+        semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
+        if semantic_outputs:
+            semantic_outputs["semantic_loss_scale"] = patch_tokens.new_tensor(self._get_semantic_loss_scale(epoch))
+        fused_global_feat, semantic_global_feat, semantic_fusion_gate = self._fuse_semantic_features(weighted_global_feat, semantic_outputs, epoch)
+        if semantic_outputs:
+            semantic_outputs["semantic_global_feat"] = semantic_global_feat
+            semantic_outputs["semantic_fusion_gate"] = semantic_fusion_gate
+
+        feat = self.bottleneck(fused_global_feat)
+
+        local_feat_1_bn = self.bottleneck_1(local_feat_1)
+        local_feat_2_bn = self.bottleneck_2(local_feat_2)
+        local_feat_3_bn = self.bottleneck_3(local_feat_3)
+        local_feat_4_bn = self.bottleneck_4(local_feat_4)
+
+        local_group_feats = []
+        local_group_bn_feats = []
+        local_group_logits = []
+
+        if self.enable_local_group:
+            local_group_feats = self._pool_local_regions(patch_tokens)
+            local_group_bn_feats = [
+                self.bottleneck_up(local_group_feats[0]),
+                self.bottleneck_mid(local_group_feats[1]),
+                self.bottleneck_low(local_group_feats[2])
+            ]
+            if self.training:
+                local_group_logits = [
+                    self.classifier_up(local_group_bn_feats[0]),
+                    self.classifier_mid(local_group_bn_feats[1]),
+                    self.classifier_low(local_group_bn_feats[2])
+                ]
+
+        if self.training:
+            if self.ID_LOSS_TYPE in ('arcface', 'cosface', 'amsoftmax', 'circle'):
+                cls_score = self.classifier(feat, label)
+                jpm_scores = cls_score
+                jpm_feats = fused_global_feat
+            else:
+                cls_score = self.classifier(feat)
+                cls_score_1 = self.classifier_1(local_feat_1_bn)
+                cls_score_2 = self.classifier_2(local_feat_2_bn)
+                cls_score_3 = self.classifier_3(local_feat_3_bn)
+                cls_score_4 = self.classifier_4(local_feat_4_bn)
+                jpm_scores = [cls_score, cls_score_1, cls_score_2, cls_score_3, cls_score_4]
+                jpm_feats = [fused_global_feat, local_feat_1, local_feat_2, local_feat_3, local_feat_4]
+
+            if self.token_branch_enabled:
+                outputs = {
+                    "global_feat": fused_global_feat,
+                    "global_bn_feat": feat,
+                    "global_logits": cls_score,
+                    "raw_global_feat": weighted_global_feat,
+                    "local_feats": local_group_feats,
+                    "local_bn_feats": local_group_bn_feats,
+                    "local_logits": local_group_logits,
+                    "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
+                    "patch_tokens": patch_tokens,
+                    "enriched_patch_tokens": enriched_patch_tokens,
+                    "visible_prototype": visible_prototype,
+                    "selection_mask": selection_mask,
+                    "selected_indices": selected_indices,
+                    "base_scores": jpm_scores,
+                    "base_feats": jpm_feats,
+                    "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
+                    "jpm_local_bn_feats": [local_feat_1_bn, local_feat_2_bn, local_feat_3_bn, local_feat_4_bn],
+                }
+                outputs.update(reliability_outputs)
+                outputs.update(semantic_outputs)
+                return outputs
+
+            return jpm_scores, jpm_feats  # global feature for triplet loss
+        else:
+            if self.token_branch_enabled:
+                if self.use_jpm_infer_fusion:
+                    if self.neck_feat == 'after':
+                        retrieval_feat = torch.cat(
+                            [feat, local_feat_1_bn / 4, local_feat_2_bn / 4, local_feat_3_bn / 4, local_feat_4_bn / 4],
+                            dim=1
+                        )
+                    else:
+                        retrieval_feat = torch.cat(
+                            [fused_global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4],
+                            dim=1
+                        )
+                else:
+                    retrieval_feat = feat if self.neck_feat == 'after' else fused_global_feat
+                if return_feature_dict:
+                    feature_dict = {
+                        "retrieval_feat": retrieval_feat,
+                        "global_only_feat": feat if self.neck_feat == 'after' else fused_global_feat,
+                        "global_feat": fused_global_feat,
+                        "global_bn_feat": feat,
+                        "raw_global_feat": weighted_global_feat,
+                        "local_feats": local_group_feats,
+                        "local_bn_feats": local_group_bn_feats,
+                        "patch_weights": patch_weights.squeeze(-1) if patch_weights is not None else None,
+                        "patch_tokens": patch_tokens,
+                        "enriched_patch_tokens": enriched_patch_tokens,
+                        "visible_prototype": visible_prototype,
+                        "selection_mask": selection_mask,
+                        "selected_indices": selected_indices,
+                        "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
+                        "jpm_local_bn_feats": [local_feat_1_bn, local_feat_2_bn, local_feat_3_bn, local_feat_4_bn],
+                    }
+                    feature_dict.update(reliability_outputs)
+                    if semantic_outputs:
+                        feature_dict.update(semantic_outputs)
+                    return feature_dict
+                return retrieval_feat
+
+            if self.neck_feat == 'after':
+                return torch.cat(
+                    [feat, local_feat_1_bn / 4, local_feat_2_bn / 4, local_feat_3_bn / 4, local_feat_4_bn / 4], dim=1)
+            else:
+                return torch.cat(
+                    [weighted_global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4], dim=1)
+
+    def load_param(self, trained_path):
+        param_dict = torch.load(trained_path)
+        for i in param_dict:
+            self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
+        print('Loading pretrained model from {}'.format(trained_path))
+
+    def load_param_finetune(self, model_path):
+        param_dict = torch.load(model_path)
+        for i in param_dict:
+            self.state_dict()[i].copy_(param_dict[i])
+        print('Loading pretrained model for finetuning from {}'.format(model_path))
+
+
+__factory_T_type = {
+    'vit_base_patch16_224_TransReID': vit_base_patch16_224_TransReID,
+    'deit_base_patch16_224_TransReID': vit_base_patch16_224_TransReID,
+    'vit_small_patch16_224_TransReID': vit_small_patch16_224_TransReID,
+    'deit_small_patch16_224_TransReID': deit_small_patch16_224_TransReID
+}
+
+def make_model(cfg, num_class, camera_num, view_num):
+    if cfg.MODEL.NAME == 'transformer':
+        if cfg.MODEL.JPM:
+            model = build_transformer_local(num_class, camera_num, view_num, cfg, __factory_T_type, rearrange=cfg.MODEL.RE_ARRANGE)
+            print('===========building transformer with JPM module ===========')
+        else:
+            model = build_transformer(num_class, camera_num, view_num, cfg, __factory_T_type)
+            print('===========building transformer===========')
+    else:
+        model = Backbone(num_class, cfg)
+        print('===========building ResNet===========')
+    return model

@@ -1,0 +1,114 @@
+% !TeX root = ../main.tex
+% Draft from:
+% - E:\GHuy\Study\TGMT\train_log.txt
+% - E:\GHuy\Study\TGMT\transformer_best.pth
+% - branch train (transreid_colab)
+% - branch train: transreid_colab/README.md
+% - branch train: transreid_colab/README_VG_LOCAL.md
+
+\section{Thực nghiệm cho mô hình cải tiến trên nhánh train}
+\label{sec:improved-train-experiment}
+
+\subsection{Mô hình và hướng cải tiến}
+Thực nghiệm này đánh giá một biến thể cải tiến của TransReID
+\cite{he2021transreidtransformerbasedobjectreidentification}. So với cấu hình TransReID stride kết hợp JPM, mô hình
+cải tiến được xây dựng theo bốn hướng chính:
+\begin{itemize}
+    \item \textbf{Visibility-guided patch weighting}: mỗi patch token được gán
+    một trọng số nhìn thấy thông qua một đầu dự đoán hai lớp có kích thước
+    $768 \rightarrow 192 \rightarrow 1$ kèm hàm sigmoid.
+    \item \textbf{Dynamic top-k token enrichment}: các patch có trọng số cao
+    nhất được dùng để tạo một \textit{visible prototype}, sau đó quay lại tăng
+    cường cho toàn bộ patch token trước khi tổng hợp đặc trưng toàn cục.
+    \item \textbf{JPM fusion}: đặc trưng cuối cùng ở pha suy luận được ghép từ
+    nhánh toàn cục và bốn nhánh cục bộ của JPM nhằm giữ đồng thời thông tin
+    toàn cục và chi tiết vùng.
+    \item \textbf{Synthetic occlusion augmentation (OCC\_AUG)}: trong quá trình
+    huấn luyện, hệ thống sinh thêm các mẫu bị che khuất tổng hợp để tăng khả
+    năng chịu che khuất và ép đặc trưng của ảnh gốc và ảnh bị che vẫn giữ tính
+    nhất quán.
+\end{itemize}
+
+Gọi $z_i$ là patch token thứ $i$, trọng số nhìn thấy tương ứng được ước lượng
+theo công thức:
+\begin{equation}
+w_i = \sigma(\mathrm{MLP}(z_i)).
+\end{equation}
+Từ các patch có trọng số cao nhất, mô hình tạo ra một prototype:
+\begin{equation}
+p = \sum_{i \in \mathrm{TopK}} \alpha_i z_i, \qquad
+\alpha_i = \frac{\exp(w_i)}{\sum_{j \in \mathrm{TopK}} \exp(w_j)}.
+\end{equation}
+Patch token sau tăng cường được tính như sau:
+\begin{equation}
+\tilde{z}_i = z_i + \lambda \, w_i \, p,
+\end{equation}
+trong đó $\lambda = 0.5$ theo cấu hình huấn luyện. Đặc trưng toàn cục dùng cho
+truy hồi được tổng hợp bằng trung bình có trọng số:
+\begin{equation}
+g = \frac{\sum_i w_i \tilde{z}_i}{\sum_i w_i + \epsilon},
+\end{equation}
+với $\epsilon = 10^{-6}$.
+
+Trong nhánh \texttt{TOKEN\_ENRICH}, tỉ lệ top-k được đặt là $0.3$. Với cấu hình
+stride $[12,12]$ và ảnh đầu vào $256 \times 128$, lưới patch có kích thước
+$21 \times 10$, tương ứng khoảng $210$ patch token; do đó nhánh token
+enrichment sử dụng xấp xỉ $63$ patch có điểm nhìn thấy cao nhất để xây dựng
+prototype. Với \texttt{OCC\_AUG}, một phần mẫu huấn luyện được tạo phiên bản bị
+che khuất tổng hợp với xác suất $0.5$, diện tích vùng che trong khoảng
+$[0.08, 0.30]$ và tỉ lệ khung che trong khoảng $[0.5, 2.0]$.
+
+Về tối ưu hóa, mô hình vẫn kế thừa cơ chế \textit{softmax + soft triplet} của
+TransReID trên nhánh toàn cục và các nhánh JPM. Trên đó, nhánh
+\texttt{VIS\_WEIGHT} bổ sung một thành phần điều chuẩn cho patch weight:
+\begin{equation}
+\mathcal{L}_{reg}
+= \alpha \, (\bar{w} - \tau)^2 - \beta \, \mathrm{Var}(w),
+\end{equation}
+trong đó $\tau = 0.5$, $\alpha = 1.0$, $\beta = 1.0$. Thành phần này khuyến
+khích phân phối patch weight không bị suy biến về hằng số, đồng thời giữ giá trị
+trung bình gần ngưỡng mục tiêu.
+
+Khi bật \texttt{OCC\_AUG}, quá trình huấn luyện còn bổ sung loss nhận dạng trên
+mẫu bị che khuất và một thành phần nhất quán đặc trưng giữa ảnh gốc và ảnh bị
+che tổng hợp. Khi đó, loss tổng quát có thể được viết dưới dạng:
+\begin{equation}
+\mathcal{L}
+= \mathcal{L}_{ID}^{JPM}
++ \mathcal{L}_{tri}^{JPM}
++ \lambda_{reg}\mathcal{L}_{reg}
++ \lambda_{occ}\mathcal{L}_{occ}
++ \lambda_{cons}\mathcal{L}_{cons},
+\end{equation}
+với $\lambda_{reg} = 0.05$, $\lambda_{occ} = 0.5$ và $\lambda_{cons} = 0.3$.
+Trong đó, $\mathcal{L}_{occ}$ giúp mô hình vẫn giữ khả năng nhận dạng khi một
+phần cơ thể bị che khuất, còn $\mathcal{L}_{cons}$ ép biểu diễn của cặp
+``ảnh gốc -- ảnh bị che tổng hợp'' không lệch nhau quá xa trong không gian đặc
+trưng.
+
+\subsection{Thiết lập dữ liệu và cấu hình huấn luyện}
+Các cài đặt chi tiết về dữ liệu, cấu hình backbone, giao thức so sánh baseline
+và siêu tham số huấn luyện của biến thể này được chuyển sang
+Phụ lục~\ref{sec:appendix_experimental_config}.
+
+\subsection{Kết quả định lượng}
+
+\begin{table}[t]
+\centering
+\begin{tabular}{l|c|c|c}
+\hline
+Mô hình & Epoch & mAP (\%) & Rank-1 (\%) \\
+\hline
+Baseline & 120 & 88.9 & 95.2 \\
+Mô hình cải tiến & 120 & 89.3 & 95.1 \\
+\hline
+\end{tabular}
+\caption{So sánh baseline TransReID gốc và mô hình cải tiến trên Market-1501.}
+\label{tab:baseline-vs-improved-epoch120}
+\end{table}
+
+So với baseline TransReID gốc, mô hình cải tiến tăng khoảng $0.3$ điểm mAP,
+trong khi Rank-1 gần như giữ nguyên. Xu hướng này phù hợp với mục tiêu của
+\textit{visibility-guided patch weighting}, \textit{token enrichment} và
+\textit{OCC\_AUG}: cải thiện chất lượng biểu diễn và thứ tự truy hồi tổng thể,
+nhiều hơn là thay đổi mạnh top-1 accuracy.

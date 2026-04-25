@@ -1,0 +1,151 @@
+% !TeX root = ../main.tex
+% ====================
+% V. KET QUA THUC NGHIEM
+% ====================
+\section{Kết quả thực nghiệm}
+\label{sec:experimental}
+
+Các kết quả được trình bày theo hai nhóm thiết lập khởi tạo đã nêu ở Mục~\ref{sec:experimental_setup}. Bảng~\ref{tab:overall_results} tóm tắt hiệu năng của các biến thể chính trên Market-1501.
+
+\begin{table*}[!b]
+\centering
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}L{4.2cm}L{7.0cm}cc@{}}
+\toprule
+\textbf{Biến thể} & \textbf{Mô tả ngắn} & \textbf{mAP (\%)} & \textbf{Rank-1 (\%)} \\
+\midrule
+\multicolumn{4}{@{}l}{\textbf{Thiết lập fine-tune từ checkpoint ReID}} \\
+\cmidrule(lr){1-4}
+Hợp nhất toàn cục có trọng số & Hợp nhất tuyến tính với \(\alpha=0.8\) & \textbf{89.5} & \textbf{95.5} \\
+Cấu hình đối chứng cận baseline & Đối chứng gần baseline với \(\alpha=1.0\) & 89.4 & 95.3 \\
+Gán trọng số ở mức JPM & Gán trọng số trê   n các nhánh cục bộ của JPM & 88.6 & 95.0 \\
+Chọn lọc top-k theo foreground & Chọn lọc các patch có foreground score cao nhất & 89.5 & 95.3 \\
+\addlinespace[2pt]
+\multicolumn{4}{@{}l}{\textbf{Thiết lập huấn luyện từ khởi tạo ImageNet}} \\
+\cmidrule(lr){1-4}
+Thay thế trực tiếp đặc trưng toàn cục & Thay trực tiếp đặc trưng toàn cục bằng đặc trưng patch đã được gán trọng số & 64.0 & 81.8 \\
+Hiệu chỉnh residual có cổng & Hiệu chỉnh residual với cổng học được; kết quả tốt nhất tại epoch 100 & 88.4 & 94.9 \\
+OVTF & Gán trọng số theo khả năng quan sát, bổ sung token động, hợp nhất tại JPM và tăng cường che khuất tổng hợp & \textbf{89.3} & \textbf{95.1} \\
+\bottomrule
+\end{tabular}
+\caption{Tổng hợp các kết quả chính trên Market-1501.}
+\label{tab:overall_results}
+\end{table*}
+
+\subsection{Kết quả trong thiết lập fine-tune từ checkpoint ReID}
+
+Ở thiết lập này, mô hình được khởi tạo từ \texttt{vit\_transreid\_market.pth}; do đó, trọng tâm không nằm ở việc chứng minh nhánh patch có thể tự tạo ra toàn bộ cải thiện, mà ở việc đánh giá liệu phương pháp đề xuất có thể được tích hợp vào một baseline ReID đã được huấn luyện trước mà không làm suy giảm biểu diễn gốc hay không. Các kết quả theo từng mốc đánh giá của nhóm cấu hình này được trình bày trong Bảng~\ref{tab:finetune_results}.
+
+\begin{table*}[!t]
+\centering
+\renewcommand{\arraystretch}{1.10}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{3.8cm}cccccc@{}}
+\toprule
+\textbf{Biến thể} & \textbf{Epoch 20} & \textbf{Epoch 40} & \textbf{Epoch 60} & \textbf{Epoch 80} & \textbf{Epoch 100} & \textbf{Epoch 120} \\
+\midrule
+Hợp nhất toàn cục có trọng số & 87.3/94.3 & 88.6/95.2 & 89.2/95.2 & 89.3/95.3 & 89.4/95.4 & \textbf{89.5/95.5} \\
+Cấu hình đối chứng cận baseline & 87.7/94.6 & 88.5/95.2 & 89.1/95.0 & 89.3/95.3 & 89.4/95.3 & 89.4/95.2 \\
+Gán trọng số ở mức JPM & 87.2/94.1 & 88.6/95.0 & -- & -- & -- & -- \\
+Chọn lọc top-k theo foreground & 87.6/94.7 & 88.5/95.1 & 89.1/95.2 & 89.3/95.4 & 89.5/95.3 & 89.5/95.3 \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả của các biến thể trong thiết lập fine-tune từ checkpoint ReID theo mAP/Rank-1 (\%).}
+\label{tab:finetune_results}
+\end{table*}
+
+\subsubsection{Hợp nhất toàn cục như cấu hình tham chiếu tốt nhất}
+
+Trong toàn bộ nhóm fine-tune, \textbf{biến thể hợp nhất toàn cục có trọng số} là cấu hình đạt hiệu năng tuyệt đối cao nhất, với $89.5\%$ mAP và $95.5\%$ Rank-1 tại epoch $120$. Kết quả này cho thấy việc giữ nguyên đặc trưng toàn cục của TransReID và chỉ đưa nhánh patch vào như một tín hiệu bổ trợ là một lựa chọn hợp lý. Nói cách khác, đặc trưng toàn cục gốc vẫn đóng vai trò chi phối, trong khi thông tin patch-level chỉ làm nhiệm vụ tinh chỉnh biểu diễn theo hướng ưu tiên các vùng nhìn thấy đáng tin cậy hơn.
+
+\subsubsection{Kiểm chứng đóng góp riêng của nhánh patch}
+
+Sau khi biến thể hợp nhất toàn cục có trọng số cho kết quả cao, vấn đề phương pháp luận quan trọng là xác định mức đóng góp thực sự của nhánh patch. \textbf{Cấu hình đối chứng cận baseline} được xây dựng để trả lời câu hỏi này bằng cách đặt \(\alpha=1.0\), tức là nhánh patch gần như không còn tham gia trực tiếp vào đặc trưng đầu ra. Mặc dù đây chưa phải là baseline sạch hoàn toàn do nhánh gán trọng số vẫn tồn tại như một nhánh phụ, cấu hình này vẫn gần với baseline hơn đáng kể so với biến thể hợp nhất toàn cục có trọng số.
+
+Khoảng cách rất nhỏ giữa hai cấu hình này, chỉ $0.1$ điểm mAP và $0.2$ điểm Rank-1 ở mốc cuối, cho thấy phần lớn hiệu năng cao trong thiết lập fine-tune nhiều khả năng đến từ chính checkpoint ReID đã được huấn luyện trước. Vì vậy, ở nhóm kết quả này, cho thấy phương pháp đề xuất tương thích tốt với baseline, hơn là khẳng định nhánh patch tự tạo ra một mức cải thiện lớn và độc lập.
+
+\subsubsection{Các biến thể ở mức cục bộ và mức lọc foreground}
+
+\textbf{Biến thể gán trọng số ở mức JPM} mở rộng hướng khảo sát bằng cách đưa cơ chế gán trọng số xuống các nhánh cục bộ của JPM, với lập luận rằng hiện tượng che khuất thường diễn ra cục bộ theo từng vùng cơ thể. Tuy nhiên, số liệu hiện có cho thấy cấu hình này không vượt được hợp nhất toàn cục. Tại epoch $40$, biến thể này đạt $88.6\%$ mAP và $95.0\%$ Rank-1, ngang về mAP nhưng thấp hơn về Rank-1 so với biến thể hợp nhất toàn cục có trọng số. Điều đó cho thấy việc di chuyển cơ chế gán trọng số xuống mức cục bộ chưa mang lại ưu thế rõ rệt trong phiên bản hiện tại.
+
+\textbf{Biến thể chọn lọc top-k theo foreground} tiếp tục tiến gần hơn với trực giác về khả năng quan sát bằng cách giữ lại nhóm patch có foreground score cao nhất. Đây là một biến thể dễ diễn giải hơn, vì cơ chế chọn lọc không chỉ tái phân bố mức đóng góp mà còn trực tiếp quyết định patch nào được giữ lại. Tuy nhiên, xét trên số liệu, cấu hình này chỉ đạt mức tương đương biến thể hợp nhất toàn cục có trọng số ở mAP và vẫn thấp hơn nhẹ về Rank-1. Như vậy, trong điều kiện fine-tune từ checkpoint ReID, hợp nhất toàn cục vẫn là chiến lược tích hợp hiệu quả và cân bằng nhất.
+
+\subsection{Kết quả trong thiết lập huấn luyện từ khởi tạo ImageNet}
+
+Khác với thiết lập trước, toàn bộ mô hình ở đây được huấn luyện từ trọng số tiền huấn luyện ImageNet. Đây là điều kiện khởi tạo khắt khe hơn, vì mô hình chưa sở hữu biểu diễn ReID chuyên biệt ngay từ đầu. Do đó, các kết quả ở nhóm này phản ánh công bằng hơn đóng góp nội tại của phương pháp, đồng thời cho phép quan sát rõ hơn tính ổn định hội tụ của từng chiến lược tích hợp.
+
+\subsubsection{Biến thể thay thế trực tiếp đặc trưng toàn cục}
+
+\textbf{Biến thể thay thế trực tiếp đặc trưng toàn cục} là phép thử cực đoan nhất, trong đó đặc trưng toàn cục bị thay thế hoàn toàn bởi đặc trưng patch đã được gán trọng số. Kết quả chỉ đạt $64.0\%$ mAP và $81.8\%$ Rank-1, thấp hơn rất xa so với mọi biến thể còn lại. Bằng chứng này cho thấy đặc trưng patch-level, dù đã được điều chỉnh theo khả năng quan sát, vẫn chưa đủ sức đóng vai trò đại diện chính cho bài toán ReID nếu tách khỏi nhánh toàn cục của TransReID. Do đó, chiến lược thay thế trực tiếp có thể được xem là không phù hợp đối với bài toán này.
+
+\subsubsection{Biến thể hiệu chỉnh residual có cổng}
+
+Sau khi loại bỏ hướng thay thế trực tiếp, nghiên cứu chuyển sang một chiến lược \textbf{biến thể hiệu chỉnh residual có cổng}. Ở biến thể này, nhánh patch chỉ đóng vai trò hiệu chỉnh biểu diễn toàn cục thông qua một cổng học được, nhờ đó tác động của nhánh mới được kiểm soát chặt hơn trong giai đoạn đầu huấn luyện. Bảng~\ref{tab:v7_detailed} trình bày toàn bộ quá trình hội tụ của biến thể này ở từng mốc epoch.
+
+\begin{table}[!b]
+\centering
+\renewcommand{\arraystretch}{1.08}
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+\textbf{Epoch} & \textbf{mAP (\%)} & \textbf{Rank-1 (\%)} & \textbf{Rank-5 (\%)} & \textbf{Rank-10 (\%)} \\
+\midrule
+20  & 84.4 & 92.8 & 97.8 & 98.7 \\
+40  & 86.6 & 94.0 & 98.1 & 98.6 \\
+60  & 87.7 & 94.6 & 98.3 & 99.0 \\
+80  & 88.2 & 94.7 & 98.1 & 98.8 \\
+100 & \textbf{88.4} & \textbf{94.9} & 98.2 & 99.0 \\
+120 & 88.4 & 94.8 & 98.1 & 99.0 \\
+\bottomrule
+\end{tabular}
+\caption{Diễn biến kết quả của biến thể hiệu chỉnh residual có cổng dưới thiết lập khởi tạo từ ImageNet.}
+\label{tab:v7_detailed}
+\end{table}
+
+Biến thể hiệu chỉnh residual có cổng tăng đều từ $84.4\%$ mAP ở epoch $20$ lên $88.4\%$ mAP ở epoch $100$, sau đó gần như không còn cải thiện ở epoch $120$. Xu hướng này cho thấy hiệu chỉnh residual là một cơ chế tích hợp ổn định khi mô hình còn phải học lại toàn bộ biểu diễn ReID từ khởi tạo ImageNet. Đồng thời, việc hiệu năng bão hòa sau epoch $100$ cũng cho thấy trong cấu hình hiện tại, kéo dài số epoch đơn thuần khó có khả năng tạo ra thêm lợi ích đáng kể nếu không thay đổi chiến lược tối ưu.
+
+\subsubsection{Biến thể OVTF}
+
+Bên cạnh hai cấu hình trên, nghiên cứu còn khảo sát \textbf{OVTF}
+(\textit{Occlusion-aware Visibility-guided Token Fusion}). Biến thể này kết hợp
+bốn thành phần đồng thời: gán trọng số theo khả năng quan sát, bổ sung token
+động (\textit{dynamic token enrichment}), hợp nhất tại JPM và tăng cường che
+khuất tổng hợp (\textit{synthetic occlusion augmentation}). Mục tiêu của OVTF
+không chỉ là tích hợp nhánh patch vào đặc trưng cuối, mà còn tăng cường tính
+bền vững của mô hình trước hiện tượng che khuất và nâng cao khả năng lan truyền
+thông tin từ các patch có độ tin cậy cao.
+
+Chi tiết cấu hình của OVTF được trình bày tại
+Phụ lục~\ref{sec:appendix_experimental_config}.
+
+\begin{table}[!htbp]
+\centering
+\renewcommand{\arraystretch}{1.10}
+\begin{tabular}{@{}L{4.8cm}cc@{}}
+\toprule
+\textbf{Mô hình} & \textbf{mAP (\%)} & \textbf{Rank-1 (\%)} \\
+\midrule
+Baseline TransReID & 88.9 & \textbf{95.2} \\
+OVTF & \textbf{89.3} & 95.1 \\
+\bottomrule
+\end{tabular}
+\caption{So sánh baseline TransReID và OVTF tại epoch 120 dưới thiết lập khởi
+tạo từ ImageNet.}
+\label{tab:e1_compare}
+\end{table}
+
+So với baseline cùng giao thức khởi tạo, OVTF tăng $0.4$ điểm mAP trong khi chỉ
+giảm rất nhẹ $0.1$ điểm Rank-1. Điều này cho thấy cấu hình này thực sự cải
+thiện chất lượng sắp hạng tổng thể, tức là cải thiện phần thứ tự truy hồi ngoài
+vị trí đầu tiên, dù không làm thay đổi đáng kể top-1 accuracy. Xét trên các số
+liệu hiện có, OVTF là cấu hình đạt mAP cuối cao nhất trong nhóm huấn
+luyện với khởi tạo từ ImageNet.
+
+\subsection{Tổng hợp kết quả thực nghiệm}
+
+Nhìn chung, chiến lược thay thế trực tiếp đặc trưng toàn cục bằng đặc trưng
+patch không phù hợp đối với bài toán Person ReID. Ngược lại, các cơ chế tích hợp có
+kiểm soát cho kết quả khả quan hơn: trong thiết lập fine-tune, biến thể hợp
+nhất toàn cục có trọng số đạt hiệu năng tuyệt đối cao nhất; trong thiết lập
+khởi tạo từ ImageNet, biến thể hiệu chỉnh residual có cổng cho thấy quá trình
+hội tụ ổn định, còn OVTF đạt mAP cuối cao nhất.

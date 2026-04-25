@@ -1,0 +1,86 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage[T5,T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[vietnamese]{babel}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{dblfloatfix}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=cyan]{hyperref}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\renewcommand{\abstractname}{Tóm tắt}
+\renewcommand{\IEEEkeywordsname}{Từ khóa}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\refname}{Tài liệu tham khảo}
+
+\makeatletter
+\def\abstract{\normalfont
+    \if@twocolumn
+      \@IEEEabskeysecsize\textit{\abstractname}---\relax
+    \else
+      \bgroup\par\addvspace{0.5\baselineskip}\centering\vspace{-1.78ex}\@IEEEabskeysecsize\textit{\abstractname}\par\addvspace{0.5\baselineskip}\egroup\quotation\@IEEEabskeysecsize
+    \fi\@IEEEgobbleleadPARNLSP}
+\def\IEEEkeywords{\normalfont
+    \if@twocolumn
+      \@IEEEabskeysecsize\textit{\IEEEkeywordsname}---\relax
+    \else
+      \bgroup\par\addvspace{0.5\baselineskip}\centering\@IEEEabskeysecsize\textit{\IEEEkeywordsname}\par\addvspace{0.5\baselineskip}\egroup\quotation\@IEEEabskeysecsize
+    \fi\@IEEEgobbleleadPARNLSP}
+\long\def\@makecaption#1#2{%
+\@IEEEfigurecaptionsepspace
+\setbox\@tempboxa\hbox{\normalfont\footnotesize {#1.}\nobreakspace\nobreakspace #2}%
+\ifdim \wd\@tempboxa >\hsize%
+\setbox\@tempboxa\hbox{\normalfont\footnotesize {#1.}\nobreakspace\nobreakspace}%
+\parbox[t]{\hsize}{\normalfont\footnotesize\noindent\unhbox\@tempboxa#2}%
+\else%
+\ifCLASSOPTIONconference
+\hbox to\hsize{\normalfont\footnotesize\hfil\box\@tempboxa\hfil}%
+\else
+\hbox to\hsize{\normalfont\footnotesize\box\@tempboxa\hfil}%
+\fi
+\fi}
+\makeatother
+
+\begin{document}
+
+\input{frontmatter/title}
+
+\maketitle
+
+\begin{abstract}
+\input{frontmatter/abstract}
+\end{abstract}
+
+\begin{IEEEkeywords}
+\input{frontmatter/keywords}
+\end{IEEEkeywords}
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/proposed_method}
+\input{sections/experimental_setup}
+\input{sections/experimental}
+\input{sections/results_discussion}
+\input{sections/conclusion}
+
+% \input{sections/acknowledgment}
+\bibliographystyle{IEEEtran}
+\nocite{gou2017dukemtmc4reid}
+\clearpage
+\bibliography{ref/refs}
+\clearpage
+
+\appendices
+\input{appendix/appendix_a}
+
+\end{document}

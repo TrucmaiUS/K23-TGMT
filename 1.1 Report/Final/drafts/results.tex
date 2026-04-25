@@ -1,0 +1,46 @@
+\section{Kết quả và thảo luận}
+
+Phần này tổng hợp các kết quả định lượng quan trọng nhất và thảo luận ý nghĩa của chúng đối với giả thuyết nghiên cứu. Do chuỗi thí nghiệm bao gồm cả setting fine-tune từ một checkpoint ReID mạnh và setting huấn luyện lại từ pretrained ImageNet, các kết quả được diễn giải theo hai góc nhìn: hiệu năng tuyệt đối và mức độ công bằng trong đánh giá đóng góp của proposal.
+
+\subsection{Kết quả chính}
+
+\begin{table*}[!t]
+    \centering
+    \begin{tabular}{p{1.1cm} p{4.8cm} p{3.6cm} c c}
+        \hline
+        Phiên bản & Mô tả ngắn & Khởi tạo & mAP & Rank-1 \\
+        \hline
+        V1 & Thay trực tiếp global feature bằng weighted patch feature & ImageNet pretrained & 64.0\% & 81.8\% \\
+        V2 & Global fusion với \(\alpha = 0.8\) & Fine-tune từ \texttt{vit\_transreid\_market.pth} & \textbf{89.5\%} & \textbf{95.5\%} \\
+        V3 & Ablation gần baseline với \(\alpha = 1.0\) & Fine-tune từ \texttt{vit\_transreid\_market.pth} & 89.4\% & 95.3\% \\
+        V4 & VG-JPM trên các nhánh local của JPM & Fine-tune từ \texttt{vit\_transreid\_market.pth} & 88.6\% & 95.0\% \\
+        V5/V6 & Foreground-aware top-k filtering & Fine-tune từ \texttt{vit\_transreid\_market.pth} & 89.5\% & 95.3\% \\
+        V7 & Residual visibility-guided fusion & ImageNet pretrained & 88.4\%* & 94.9\%* \\
+        \hline
+    \end{tabular}
+
+    \vspace{4pt}
+
+    \caption{So sánh các biến thể chính trên Market-1501}
+    \label{tab:main_results}
+
+    {\footnotesize * V7 đạt mức tốt nhất 88.4\% mAP và 94.9\% Rank-1 tại epoch 100; kết quả epoch 120 là 88.4\% mAP và 94.8\% Rank-1.}
+\end{table*}
+
+Bảng~\ref{tab:main_results} cho thấy V2 là cấu hình đạt hiệu năng cao nhất về mặt tuyệt đối, với mAP 89.5\% và Rank-1 95.5\%. Điều này xác nhận rằng khi proposal được tích hợp theo cơ chế fusion có kiểm soát, TransReID không những không bị suy giảm mà còn duy trì được mức hiệu năng cạnh tranh rất cao trên Market-1501. Trái lại, V1 cho thấy việc thay thế trực tiếp đặc trưng global bằng weighted patch feature là không khả thi, vì hiệu năng giảm mạnh xuống 64.0\% mAP và 81.8\% Rank-1.
+
+Trong cùng nhóm fine-tune, V3 chỉ thấp hơn V2 một biên độ rất nhỏ, còn V4 và V5/V6 không tạo ra ưu thế rõ ràng hơn global fusion. Quan sát này cho thấy các biến thể weighting và filtering được khảo sát đều có thể vận hành ổn định trên nền TransReID, nhưng chưa chứng minh được lợi thế định lượng vượt trội khi baseline đã được khởi tạo từ một checkpoint ReID mạnh.
+
+\subsection{Thực nghiệm thành phần}
+
+Để làm rõ vai trò của từng quyết định thiết kế, chuỗi thí nghiệm được tổ chức theo dạng ablation tiến dần từ can thiệp mạnh đến tích hợp có kiểm soát. V1 là phép kiểm tra cực đoan nhất, trong đó đặc trưng toàn cục bị thay thế hoàn toàn bởi weighted patch feature. Kết quả rất thấp của V1 cho thấy proposal không thể tự đóng vai trò biểu diễn chính cho ReID nếu tách khỏi nhánh global gốc.
+
+V2 và V3 đóng vai trò nhóm ablation quan trọng nhất. V2 đưa proposal vào dưới dạng tín hiệu phụ thông qua global fusion, trong khi V3 gần như triệt tiêu tác động trực tiếp của weighted feature bằng cách đặt \(\alpha = 1.0\). Sự chênh lệch nhỏ giữa hai cấu hình này hàm ý rằng phần cải thiện quan sát được trong V2 có liên hệ chặt với chất lượng rất cao của checkpoint \texttt{vit\_transreid\_market.pth}. Nói cách khác, weighting trong setting fine-tune thể hiện được tính tương thích với baseline, nhưng chưa đủ mạnh để tự mình tạo ra một bước nhảy hiệu năng rõ rệt.
+
+VG-JPM và foreground-aware top-k filtering tiếp tục mở rộng khảo sát về mặt kiến trúc. V4 cho thấy việc đưa weighting xuống mức local branch của JPM không giúp cải thiện rõ so với fusion ở mức toàn cục. V5/V6 có ý nghĩa diễn giải tốt hơn, vì trọng số đã trực tiếp quyết định patch nào được giữ lại, nhưng kết quả cuối chỉ ngang mAP với V2 và vẫn thấp hơn nhẹ về Rank-1. Điều này cho thấy việc làm rõ cơ chế patch selection không đồng nghĩa với việc tự động cải thiện retrieval performance.
+
+Ở hướng huấn luyện lại từ ImageNet, V7 residual fusion cho kết quả tăng đều theo các mốc 20, 40, 60, 80 và 100 epoch: từ 84.4\% mAP lên 88.4\% mAP, đồng thời Rank-1 tăng từ 92.8\% lên 94.9\%. Tuy nhiên, kết quả epoch 120 giữ nguyên mAP ở 88.4\% và giảm nhẹ Rank-1 xuống 94.8\%, cho thấy mô hình đã gần như bão hòa. So với các cấu hình can thiệp mạnh hơn, residual fusion rõ ràng ổn định hơn trong giai đoạn mô hình còn phải học biểu diễn ReID từ đầu. Đây là bằng chứng quan trọng cho thấy proposal nên được đưa vào như một hiệu chỉnh có kiểm soát thay vì một phép thay thế trực tiếp.
+
+\subsection{Thảo luận}
+Phân tích vì sao phương pháp hoạt động tốt, trường hợp nào còn thất bại và
+những hạn chế còn tồn tại.

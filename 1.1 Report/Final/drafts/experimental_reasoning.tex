@@ -1,0 +1,140 @@
+% !TeX root = ../main.tex
+\section{Quá trình lập luận và kiểm chứng thực nghiệm}
+
+Phần này trình bày tiến trình hình thành, điều chỉnh và kiểm chứng thực nghiệm của phương pháp đề xuất. Mục tiêu của chuỗi thí nghiệm không chỉ là tìm ra cấu hình có độ chính xác cao nhất, mà còn là làm rõ vai trò thực sự của cơ chế \textit{visibility-guided patch weighting} trong pipeline ReID dựa trên TransReID. Toàn bộ log, checkpoint và kết quả trung gian được lưu tại thư mục \texttt{Requirement 2 \& 3/RESULTS}.
+
+\subsection{Mục tiêu phân tích thực nghiệm}
+
+Điểm xuất phát của nghiên cứu là giả thuyết rằng trong bài toán person re-identification, không phải mọi patch đều đóng góp như nhau vào đặc trưng cuối cùng. Các patch chứa vùng người rõ ràng, ổn định giữa các camera hoặc ít bị che khuất có thể mang nhiều thông tin nhận dạng hơn so với các patch nền, patch nhiễu hoặc các vùng bị occlusion. Từ giả thuyết đó, chuỗi thí nghiệm lần lượt kiểm tra ba câu hỏi. Thứ nhất, liệu việc thay thế trực tiếp đặc trưng toàn cục bằng đặc trưng đã được weighting theo patch có cải thiện hiệu năng hay không. Thứ hai, nếu proposal không thay thế hoàn toàn mà chỉ được tích hợp như một tín hiệu bổ trợ, hiệu năng có ổn định hơn hay không. Thứ ba, khi weighting được chuyển từ mức toàn cục sang mức local hoặc foreground filtering, proposal có tạo ra tác động rõ ràng hơn đối với chất lượng truy hồi hay không.
+
+Trong toàn bộ quá trình, các thí nghiệm luôn được phân tách rõ theo hai chế độ khởi tạo. Nhóm thứ nhất sử dụng \texttt{vit\_transreid\_market.pth}, tức là fine-tune từ một checkpoint ReID đã mạnh trên Market-1501. Nhóm thứ hai sử dụng \texttt{jx\_vit\_base\_p16\_224-80ecf9dd.pth}, tức là huấn luyện lại từ pretrained ImageNet. Sự phân tách này có ý nghĩa phương pháp luận quan trọng: kết quả cao trong setting fine-tune chưa đủ để khẳng định đóng góp riêng của proposal, trong khi setting ImageNet phản ánh công bằng hơn năng lực nội tại của kiến trúc nhưng khó tối ưu hơn đáng kể.
+
+\subsection{Tóm tắt các phiên bản đã khảo sát}
+
+\begin{table*}[!t]
+    \centering
+    \begin{tabular}{p{1.1cm} p{4.5cm} p{3.9cm} p{3.4cm} p{3.5cm}}
+        \hline
+        Phiên bản & Ý tưởng chính & Nguồn khởi tạo & Kết quả tốt nhất đã quan sát & Nhận xét chính \\
+        \hline
+        V1 & Thay trực tiếp global feature bằng weighted patch feature & ImageNet pretrained & mAP 64.0\%, Rank-1 81.8\% & Làm suy giảm mạnh biểu diễn gốc \\
+        V2 & Giữ global feature gốc và fusion với weighted patch feature (\(\alpha = 0.8\)) & Fine-tune từ \texttt{vit\_transreid\_market.pth} & mAP 89.5\%, Rank-1 95.5\% & Cấu hình tốt nhất trong setting fine-tune \\
+        V3 & Ablation gần với baseline: \(\alpha = 1.0\) & Fine-tune từ \texttt{vit\_transreid\_market.pth} & mAP 89.4\%, Rank-1 95.3\% & Gần ngang V2, đóng góp riêng của weighting chưa rõ \\
+        V4 & Weighting trên bốn local branches của JPM (VG-JPM) & Fine-tune từ \texttt{vit\_transreid\_market.pth} & mAP 88.6\%, Rank-1 95.0\% & Không vượt được V2, tối ưu khó hơn \\
+        V5/V6 & Foreground-aware top-k filtering trên patch tokens & Fine-tune từ \texttt{vit\_transreid\_market.pth} & mAP 89.5\%, Rank-1 95.3\% & Hợp lý hơn về mặt ý tưởng nhưng chưa vượt V2 \\
+        V7 & Residual visibility-guided fusion với gate khởi tạo nhỏ & ImageNet pretrained & Best: 88.4\%/94.9\% tại epoch 100; final: 88.4\%/94.8\% tại epoch 120 & Cấu hình ImageNet-pretrained khả thi nhất hiện tại \\
+        \hline
+    \end{tabular}
+    \caption{Tóm tắt các phiên bản thí nghiệm chính}
+    \label{tab:experiment_timeline}
+\end{table*}
+
+\subsection{Pha thử nghiệm ban đầu: thay thế trực tiếp đặc trưng toàn cục}
+
+Phiên bản đầu tiên được xây dựng theo hướng mạnh tay nhất: sử dụng weighted patch feature như đặc trưng chính cho bài toán ReID. Xét về trực giác, đây là cách kiểm tra trực tiếp nhất cho giả thuyết rằng patch weighting có thể thay thế biểu diễn toàn cục truyền thống.
+
+Tuy nhiên, kết quả thực nghiệm của V1 cho thấy hướng tiếp cận này không phù hợp. Trong setting khởi tạo từ ImageNet pretrained, V1 chỉ đạt mAP 64.0\% và Rank-1 81.8\%. Mức suy giảm này cho thấy weighted patch feature chưa đủ mạnh để thay thế hoàn toàn cho global representation của TransReID. Nói cách khác, việc đưa proposal vào theo dạng \textit{replacement} đã làm mất đi cấu trúc biểu diễn vốn đã được tối ưu cho ReID trong baseline gốc. Đây là cơ sở thực nghiệm đầu tiên để loại bỏ hướng thay thế trực tiếp.
+
+\subsection{Điều chỉnh chiến lược: từ thay thế sang fusion có kiểm soát}
+
+Sau khi V1 thất bại, nghiên cứu chuyển sang một giả thuyết thực dụng hơn: thay vì thay thế nhánh global, proposal nên được xem như một tín hiệu bổ trợ. Từ đó, V2 được xây dựng theo cơ chế fusion tuyến tính:
+
+\[
+f_{\text{final}} = \alpha f_{\text{global}} + (1 - \alpha) f_{\text{patch}}
+\]
+
+Trong thực nghiệm tốt nhất, \(\alpha = 0.8\), tức là đặc trưng global gốc vẫn đóng vai trò chi phối. Đồng thời, regularization trên patch weights được giữ ở mức nhẹ để tránh ép nhánh proposal hoạt động quá mạnh.
+
+Trong setting fine-tune từ \texttt{vit\_transreid\_market.pth}, V2 đạt các kết quả sau:
+
+\begin{table}[!h]
+    \centering
+    \begin{tabular}{c c c}
+        \hline
+        Epoch & mAP & Rank-1 \\
+        \hline
+        20 & 87.3\% & 94.3\% \\
+        40 & 88.6\% & 95.2\% \\
+        60 & 89.2\% & 95.2\% \\
+        80 & 89.3\% & 95.3\% \\
+        100 & 89.4\% & 95.4\% \\
+        120 & 89.5\% & 95.5\% \\
+        \hline
+    \end{tabular}
+    \caption{Kết quả của V2 theo các mốc đánh giá}
+    \label{tab:v2_results}
+\end{table}
+
+Đây là kết quả tốt nhất trong toàn bộ nhóm thí nghiệm fine-tune. Về mặt thực nghiệm, V2 cho thấy một kết luận rõ ràng: proposal không phù hợp khi thay thế biểu diễn gốc, nhưng có thể được tích hợp hiệu quả khi đóng vai trò nhánh tăng cường có kiểm soát.
+
+\subsection{Kiểm chứng giả thuyết: kết quả cao của V2 đến từ đâu}
+
+Sau khi V2 đạt kết quả tốt, một vấn đề phương pháp luận quan trọng được đặt ra: mức cải thiện này có thực sự đến từ module weighting hay chủ yếu là hệ quả của việc fine-tune từ một checkpoint ReID rất mạnh.
+
+Để kiểm tra giả thuyết đó, V3 được xây dựng bằng cách đặt \(\alpha = 1.0\), tức là weighted patch feature không còn tham gia trực tiếp vào đặc trưng đầu ra. Mặc dù đây chưa phải baseline sạch hoàn toàn, vì nhánh weighting vẫn tồn tại như một auxiliary branch, đây vẫn là một ablation gần với baseline hơn đáng kể so với V2. Kết quả của V3 là 87.7/94.6 tại epoch 20, 88.5/95.2 tại epoch 40, 89.1/95.0 tại epoch 60, 89.3/95.3 tại epoch 80, 89.4/95.3 tại epoch 100 và 89.4/95.2 tại epoch 120.
+
+V3 gần như tương đương V2. Do đó, có thể rút ra rằng phần lớn hiệu năng cao trong setting fine-tune chưa thể được quy trực tiếp cho weighting. Kết quả này cho thấy checkpoint ReID mạnh đóng vai trò rất lớn, và proposal trong giai đoạn này chủ yếu chứng minh được tính tương thích với baseline hơn là đóng góp định lượng rõ ràng.
+
+\subsection{Khảo sát tác động ở mức local: VG-JPM}
+
+Từ nhận định rằng weighting ở mức global chưa cho thấy đóng góp riêng rõ ràng, nghiên cứu tiếp tục khảo sát khả năng đưa weighting xuống mức local branch của JPM. Lập luận ở đây là occlusion thường diễn ra cục bộ theo từng vùng cơ thể, do đó việc học trọng số trên các nhánh local có thể phù hợp hơn với bản chất bài toán.
+
+Phiên bản VG-JPM được xây dựng để học trọng số cho bốn nhánh local. Tuy nhiên, kết quả quan sát được không ủng hộ giả thuyết này: epoch 20 đạt mAP 87.2\%, Rank-1 94.1\%, và epoch 40 đạt mAP 88.6\%, Rank-1 95.0\%. So với V2, VG-JPM chỉ ngang về mAP tại epoch 40 nhưng thấp hơn về Rank-1, đồng thời quá trình tối ưu khó hơn đáng kể. Điều này cho thấy ý tưởng local weighting tuy hợp lý về trực giác nhưng chưa được hỗ trợ bởi bằng chứng thực nghiệm đủ mạnh trong implementation hiện tại.
+
+\subsection{Khảo sát theo hướng foreground-aware filtering}
+
+Nhằm đưa proposal đến gần hơn với khái niệm visibility, nghiên cứu tiếp tục phát triển hướng \textit{foreground-aware top-k filtering}. Khác với weighting mềm trên toàn bộ patch, biến thể này dự đoán foreground score cho từng patch và chỉ giữ top-k patch có score cao nhất.
+
+Phiên bản này tiếp tục được kiểm tra trong setting fine-tune từ \texttt{vit\_transreid\_market.pth}. Kết quả tốt nhất thu được lần lượt là 87.6/94.7 tại epoch 20, 88.5/95.1 tại epoch 40, 89.1/95.2 tại epoch 60, 89.3/95.4 tại epoch 80, 89.5/95.3 tại epoch 100 và 89.5/95.3 tại epoch 120.
+
+Về mặt diễn giải, foreground-aware filtering là một biến thể rõ ràng hơn V2 vì weight thực sự quyết định patch nào được giữ lại. Tuy nhiên, về mặt kết quả, cấu hình này chỉ đạt mức tương đương mAP với V2 và vẫn thấp hơn nhẹ về Rank-1. Kết quả đó cho thấy việc làm rõ cơ chế patch selection chưa tự động chuyển hóa thành cải thiện hiệu năng vượt trội.
+
+\subsection{Chuyển sang setting công bằng hơn: huấn luyện lại từ ImageNet pretrained}
+
+Cho đến giai đoạn này, hầu hết các cấu hình đạt điểm cao đều dựa trên fine-tune từ một checkpoint ReID đã rất mạnh. Do đó, để đánh giá proposal một cách công bằng hơn, nghiên cứu chuyển sang setting khó hơn nhưng minh bạch hơn: khởi tạo lại từ pretrained ImageNet và huấn luyện lại toàn bộ trên Market-1501.
+
+Trong setting này, các cấu hình weighting hoặc filtering trước đó tỏ ra khó tối ưu hơn đáng kể. Điều này phản ánh đúng bản chất của bài toán: khi mô hình chưa học tốt biểu diễn ReID cơ sở, việc can thiệp mạnh bằng một nhánh proposal mới dễ làm quá trình hội tụ trở nên bất ổn.
+
+Từ nhận định đó, V7 được xây dựng theo hướng \textbf{residual visibility-guided fusion}. Cấu hình này không buộc nhánh proposal thay đổi mạnh biểu diễn gốc ngay từ đầu, mà chỉ cho phép nó hoạt động như một hiệu chỉnh residual có gate học được:
+
+\[
+f_{\text{fused}} = f_{\text{base}} + g \cdot (f_{\text{patch}} - f_{\text{base}})
+\]
+
+với \(g\) được khởi tạo nhỏ để bảo đảm mô hình trong giai đoạn đầu vẫn gần với pipeline gốc.
+
+\subsection{Kết quả của V7 trong setting ImageNet pretrained}
+
+Đây là cấu hình có triển vọng nhất trong số các thí nghiệm huấn luyện lại từ ImageNet. Các kết quả quan sát được trong toàn bộ 120 epoch như sau:
+
+\begin{table}[!h]
+    \centering
+    \begin{tabular}{c c c}
+        \hline
+        Epoch & mAP & Rank-1 \\
+        \hline
+        20 & 84.4\% & 92.8\% \\
+        40 & 86.6\% & 94.0\% \\
+        60 & 87.7\% & 94.6\% \\
+        80 & 88.2\% & 94.7\% \\
+        100 & 88.4\% & 94.9\% \\
+        120 & 88.4\% & 94.8\% \\
+        \hline
+    \end{tabular}
+    \caption{Kết quả của V7 trong setting ImageNet pretrained}
+    \label{tab:v7_results}
+\end{table}
+
+V7 thấp hơn nhóm fine-tune từ checkpoint ReID mạnh, nhưng điều đó phù hợp với thiết lập công bằng hơn của bài toán. Điều quan trọng là V7 hội tụ ổn định, mAP tăng đều qua các mốc 20, 40, 60, 80 và 100 epoch, sau đó hầu như không còn cải thiện thêm đến epoch 120. Kết quả này cho thấy V7 hiện là biến thể khả thi nhất trong nhóm ImageNet-pretrained, nhưng đồng thời cũng cho thấy mô hình đã tiến rất gần với điểm bão hòa.
+
+Mặt khác, tốc độ cải thiện đã có xu hướng giảm dần: từ epoch 20 đến 40 tăng 2.2 điểm mAP, từ epoch 40 đến 60 tăng 1.1 điểm mAP, từ epoch 60 đến 80 tăng 0.5 điểm mAP, từ epoch 80 đến 100 tăng 0.2 điểm mAP, và từ epoch 100 đến 120 không còn cải thiện về mAP. Xu hướng này xác nhận mô hình đã bước vào vùng lợi ích biên rất nhỏ. Do đó, việc kéo dài huấn luyện vượt quá 120 epoch khó có khả năng mang lại thêm lợi ích đáng kể nếu không thay đổi lịch learning rate hoặc chiến lược tối ưu.
+
+\subsection{Các kết luận thực nghiệm chính}
+
+Từ toàn bộ chuỗi thử nghiệm, có thể rút ra một số kết luận có ý nghĩa phương pháp luận. Thứ nhất, thay thế trực tiếp global feature bằng weighted patch feature là không phù hợp, vì hướng này làm suy giảm mạnh biểu diễn gốc của TransReID. Thứ hai, fusion có kiểm soát là chiến lược tích hợp khả thi hơn; V2 chứng minh rằng proposal có thể cùng tồn tại với TransReID và đạt hiệu năng cạnh tranh khi nhánh global gốc vẫn được bảo toàn. Thứ ba, kết quả tốt trong setting fine-tune chưa đủ để chứng minh riêng đóng góp của weighting, bởi V3 gần ngang V2. Thứ tư, các biến thể local weighting và foreground-aware filtering chưa tạo ra ưu thế thực nghiệm rõ ràng so với global fusion. Cuối cùng, nếu mục tiêu là đánh giá proposal công bằng hơn, setting ImageNet-pretrained là cần thiết, và trong setting này residual fusion hiện là phương án hợp lý nhất.
+
+\subsection{Ý nghĩa của việc lựa chọn kết quả chính}
+
+Từ góc độ trình bày báo cáo, các kết quả nên được diễn giải theo hai lớp. V2 là kết quả tốt nhất về mặt hiệu năng tuyệt đối, với mAP 89.5\% và Rank-1 95.5\% trong setting fine-tune từ checkpoint ReID mạnh. Trong khi đó, V7 residual fusion là kết quả có ý nghĩa hơn về mặt công bằng thực nghiệm, vì mô hình được huấn luyện lại từ pretrained ImageNet và đạt mức tốt nhất 88.4\% mAP cùng 94.9\% Rank-1 tại epoch 100, sau đó giữ nguyên mAP đến epoch 120.
+
+Do đó, cách trình bày hợp lý là sử dụng V2 để chứng minh proposal có thể được tích hợp vào TransReID theo cách không làm suy giảm baseline, đồng thời sử dụng V7 để cho thấy khi chuyển sang điều kiện khởi tạo công bằng hơn, residual fusion là hướng khả thi nhất trong số các proposal đã khảo sát.
