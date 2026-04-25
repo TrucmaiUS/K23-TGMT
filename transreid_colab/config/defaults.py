@@ -109,6 +109,19 @@ _C.MODEL.TOKEN_ENRICH.TOPK_RATIO = 0.3
 _C.MODEL.TOKEN_ENRICH.ENRICH_SCALE = 0.5
 _C.MODEL.TOKEN_ENRICH.USE_TOPK_ONLY = False
 
+# Reliability-aware local patch modeling
+_C.MODEL.RELIABILITY_PIPELINE = False
+_C.MODEL.REL_HIDDEN_DIM = 256
+_C.MODEL.REL_USE_SOFTMAX = False
+_C.MODEL.REL_FUSION_ALPHA = 0.25
+_C.MODEL.REL_GATE_INIT = -2.0
+_C.MODEL.REL_REG_WEIGHT = 0.001
+_C.MODEL.REL_REG_TYPE = 'entropy'
+_C.MODEL.REL_VIS_LOSS_WEIGHT = 0.2
+_C.MODEL.REL_CONSIST_LOSS_WEIGHT = 0.2
+_C.MODEL.REL_METRIC_LOSS_WEIGHT = 0.3
+_C.MODEL.REL_DETACH_CONSIST_WEIGHTS = True
+
 # Synthetic occlusion pair training
 _C.MODEL.OCC_AUG = CN()
 _C.MODEL.OCC_AUG.ENABLED = False
@@ -152,6 +165,12 @@ _C.INPUT.SIZE_TEST = [384, 128]
 _C.INPUT.PROB = 0.5
 # Random probability for random erasing
 _C.INPUT.RE_PROB = 0.5
+# Parameters for paired synthetic occlusion used by the reliability pipeline
+_C.INPUT.REL_OCC_PROB = 1.0
+_C.INPUT.REL_OCC_MIN_AREA = 0.10
+_C.INPUT.REL_OCC_MAX_AREA = 0.28
+_C.INPUT.REL_OCC_MIN_ASPECT = 0.5
+_C.INPUT.REL_OCC_FILL = 0.0
 # Values to be used for image normalization
 _C.INPUT.PIXEL_MEAN = [0.485, 0.456, 0.406]
 # Values to be used for image normalization

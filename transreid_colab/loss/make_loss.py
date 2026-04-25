@@ -172,6 +172,59 @@ def make_loss(cfg, num_classes):    # modified by gu
         )
         return (pixel_loss * pixel_weights).sum() / (pixel_weights.sum() + cfg.MODEL.SEM_ALIGN.EPS)
 
+    def reliability_visible_targets(occ_mask, patch_grid):
+        visible_target = 1.0 - F.adaptive_avg_pool2d(occ_mask.float(), patch_grid)
+        return visible_target.flatten(1).clamp(0.0, 1.0)
+
+    def reliability_regularization(outputs):
+        patch_weights = outputs.get("patch_weights")
+        if patch_weights is None:
+            patch_weights = outputs.get("local_weights")
+        if patch_weights is None:
+            return outputs["global_feat"].new_tensor(0.0)
+
+        if cfg.MODEL.REL_REG_TYPE == 'entropy':
+            return -torch.sum(patch_weights * torch.log(patch_weights + 1e-12), dim=1).mean()
+        return outputs["global_feat"].new_tensor(0.0)
+
+    def reliability_supervision_loss(occ_outputs, occ_mask):
+        patch_reliability = occ_outputs.get("patch_reliability")
+        patch_grid = occ_outputs.get("patch_grid")
+        if patch_reliability is None or patch_grid is None:
+            return occ_outputs["global_feat"].new_tensor(0.0)
+
+        occluded_target = 1.0 - reliability_visible_targets(occ_mask, patch_grid)
+        if torch.count_nonzero(occluded_target).item() == 0:
+            return patch_reliability.sum() * 0.0
+        occlusion_penalty = patch_reliability.clamp(0.0, 1.0)
+        return (occluded_target * occlusion_penalty).sum() / (occluded_target.sum() + 1e-12)
+
+    def reliability_patch_consistency_loss(clean_outputs, occ_outputs, occ_mask):
+        clean_tokens = clean_outputs.get("patch_tokens")
+        occ_tokens = occ_outputs.get("patch_tokens")
+        clean_rel = clean_outputs.get("patch_reliability")
+        occ_rel = occ_outputs.get("patch_reliability")
+        patch_grid = clean_outputs.get("patch_grid")
+        if clean_tokens is None or occ_tokens is None or clean_rel is None or occ_rel is None or patch_grid is None:
+            return clean_outputs["global_feat"].new_tensor(0.0)
+
+        visible_target = reliability_visible_targets(occ_mask, patch_grid)
+        clean_tokens = F.normalize(clean_tokens, dim=-1)
+        occ_tokens = F.normalize(occ_tokens, dim=-1)
+        if cfg.MODEL.REL_DETACH_CONSIST_WEIGHTS:
+            clean_rel = clean_rel.detach()
+            occ_rel = occ_rel.detach()
+        reliable_weights = torch.min(clean_rel, occ_rel) * visible_target
+        patch_distance = 1.0 - (clean_tokens * occ_tokens).sum(dim=-1)
+        return (reliable_weights * patch_distance).sum() / (reliable_weights.sum() + 1e-12)
+
+    def reliability_metric_loss(target, clean_outputs, occ_outputs):
+        clean_feat = clean_outputs.get("reliability_feat")
+        occ_feat = occ_outputs.get("reliability_feat")
+        if clean_feat is None or occ_feat is None:
+            return clean_outputs["global_feat"].new_tensor(0.0)
+        return 0.5 * triplet(clean_feat, target)[0] + 0.5 * triplet(occ_feat, target)[0]
+
     def legacy_softmax_triplet_loss(score, feat, target):
         if cfg.MODEL.IF_LABELSMOOTH == 'on':
             if isinstance(score, list):
@@ -212,7 +265,7 @@ def make_loss(cfg, num_classes):    # modified by gu
             total_loss = total_loss + cfg.MODEL.LOCAL_GROUP.LAMBDA_ID * local_id_loss
 
         patch_weights = outputs.get("patch_weights")
-        if patch_weights is not None:
+        if cfg.MODEL.VIS_WEIGHT.ENABLED and patch_weights is not None:
             total_loss = total_loss + cfg.MODEL.VIS_WEIGHT.LAMBDA_REG * patch_weight_regularizer(patch_weights)
 
         align_loss, separation_loss = semantic_alignment_losses(outputs)
@@ -228,9 +281,31 @@ def make_loss(cfg, num_classes):    # modified by gu
 
         return total_loss
 
+    def reliability_pair_loss(outputs, target):
+        clean_outputs = outputs["clean_outputs"]
+        occ_outputs = outputs["occ_outputs"]
+        occ_mask = outputs["occ_mask"]
+
+        clean_loss = transformer_dict_loss(clean_outputs, target)
+        occ_loss = transformer_dict_loss(occ_outputs, target)
+        total_loss = 0.5 * (clean_loss + occ_loss)
+        total_loss = total_loss + cfg.MODEL.REL_REG_WEIGHT * 0.5 * (
+            reliability_regularization(clean_outputs) + reliability_regularization(occ_outputs)
+        )
+        total_loss = total_loss + cfg.MODEL.REL_VIS_LOSS_WEIGHT * reliability_supervision_loss(occ_outputs, occ_mask)
+        total_loss = total_loss + cfg.MODEL.REL_CONSIST_LOSS_WEIGHT * reliability_patch_consistency_loss(
+            clean_outputs, occ_outputs, occ_mask
+        )
+        total_loss = total_loss + cfg.MODEL.REL_METRIC_LOSS_WEIGHT * reliability_metric_loss(
+            target, clean_outputs, occ_outputs
+        )
+        return total_loss
+
     if sampler == 'softmax':
         def loss_func(outputs, target, target_cam=None):
             if isinstance(outputs, dict):
+                if "clean_outputs" in outputs and "occ_outputs" in outputs:
+                    return reliability_pair_loss(outputs, target)
                 return cfg.MODEL.ID_LOSS_WEIGHT * id_loss(outputs["global_logits"], target)
             score, _ = outputs
             return F.cross_entropy(score, target)
@@ -238,6 +313,8 @@ def make_loss(cfg, num_classes):    # modified by gu
     elif cfg.DATALOADER.SAMPLER == 'softmax_triplet':
         def loss_func(outputs, target, target_cam=None):
             if isinstance(outputs, dict):
+                if "clean_outputs" in outputs and "occ_outputs" in outputs:
+                    return reliability_pair_loss(outputs, target)
                 return transformer_dict_loss(outputs, target)
 
             score, feat = outputs

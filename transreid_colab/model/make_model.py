@@ -99,6 +99,77 @@ def enhance_patch_tokens(patch_tokens, patch_weights, topk_ratio, enrich_scale, 
     }
 
 
+class PatchReliabilityModeling(nn.Module):
+    def __init__(self, dim, hidden_dim, use_softmax=False, fusion_alpha=0.25, gate_init=-2.0):
+        super().__init__()
+        self.use_softmax = use_softmax
+        self.fusion_alpha = fusion_alpha
+        self.reliability_head = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.gate_head = nn.Sequential(
+            nn.Linear(dim * 3, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        self.reliability_head.apply(weights_init_kaiming)
+        self.gate_head.apply(weights_init_kaiming)
+        nn.init.constant_(self.gate_head[-1].weight, 0.0)
+        nn.init.constant_(self.gate_head[-1].bias, gate_init)
+
+    def forward(self, base_global_feat, patch_tokens):
+        reliability_logits = self.reliability_head(patch_tokens).squeeze(-1)
+        reliability_scores = torch.sigmoid(reliability_logits)
+        if self.use_softmax:
+            reliability_weights = F.softmax(reliability_logits, dim=1)
+        else:
+            reliability_scores_fp32 = reliability_scores.float().clamp(min=1e-4, max=1.0)
+            reliability_weights = reliability_scores_fp32 / (
+                reliability_scores_fp32.sum(dim=1, keepdim=True) + 1e-6
+            )
+            reliability_weights = reliability_weights.to(patch_tokens.dtype)
+
+        reliability_feat = torch.sum(reliability_weights.unsqueeze(-1) * patch_tokens.float(), dim=1)
+        reliability_feat = reliability_feat.to(patch_tokens.dtype)
+        gate_input = torch.cat(
+            [base_global_feat, reliability_feat, torch.abs(base_global_feat - reliability_feat)],
+            dim=1
+        )
+        reliability_gate = torch.sigmoid(self.gate_head(gate_input))
+        fused_feat = base_global_feat + self.fusion_alpha * reliability_gate * (reliability_feat - base_global_feat)
+
+        return fused_feat, {
+            "base_global_feat": base_global_feat,
+            "fused_global_feat": fused_feat,
+            "reliability_feat": reliability_feat,
+            "reliability_logits": reliability_logits,
+            "patch_reliability": reliability_scores,
+            "patch_weights": reliability_weights,
+            "reliability_gate": reliability_gate.squeeze(-1),
+        }
+
+
+def aggregate_patch_weights_to_local_branches(patch_weights, divide_length, rearrange, shift_num, shuffle_groups):
+    local_weight_tokens = patch_weights.unsqueeze(-1)
+    if rearrange:
+        local_weight_tokens = shuffle_unit(local_weight_tokens, shift_num, shuffle_groups)
+
+    patch_count = local_weight_tokens.size(1)
+    patch_length = patch_count // divide_length
+    branch_weights = []
+    for branch_idx in range(divide_length):
+        start = branch_idx * patch_length
+        end = patch_count if branch_idx == divide_length - 1 else (branch_idx + 1) * patch_length
+        branch_weight = local_weight_tokens[:, start:end, 0].mean(dim=1)
+        branch_weights.append(branch_weight)
+
+    local_branch_weights = torch.stack(branch_weights, dim=1)
+    local_branch_weights = local_branch_weights / (local_branch_weights.sum(dim=1, keepdim=True) + 1e-6)
+    return local_branch_weights
+
+
 class SemanticAlignmentHead(nn.Module):
     def __init__(self, dim, patch_grid, cfg):
         super().__init__()
@@ -353,8 +424,9 @@ class build_transformer(nn.Module):
         self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
         self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
         self.enable_sem_align = cfg.MODEL.SEM_ALIGN.ENABLED
+        self.use_reliability_pipeline = cfg.MODEL.RELIABILITY_PIPELINE
         self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
-        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align or self.use_reliability_pipeline
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
         self.semantic_warmup_epochs = cfg.MODEL.SEM_ALIGN.WARMUP_EPOCHS
@@ -419,6 +491,18 @@ class build_transformer(nn.Module):
         else:
             self.semantic_align_head = None
         self.semantic_fusion = SemanticFusionBlock(self.in_planes, cfg) if self.enable_semantic_fusion else None
+
+        if self.use_reliability_pipeline:
+            self.patch_reliability_modeling = PatchReliabilityModeling(
+                self.in_planes,
+                cfg.MODEL.REL_HIDDEN_DIM,
+                cfg.MODEL.REL_USE_SOFTMAX,
+                cfg.MODEL.REL_FUSION_ALPHA,
+                cfg.MODEL.REL_GATE_INIT,
+            )
+            print('using reliability-aware patch modeling with fusion alpha:{}'.format(cfg.MODEL.REL_FUSION_ALPHA))
+        else:
+            self.patch_reliability_modeling = None
 
         if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
@@ -566,6 +650,11 @@ class build_transformer(nn.Module):
             selection_mask = patch_context["selection_mask"]
             selected_indices = patch_context["selected_indices"]
 
+        reliability_outputs = {}
+        if self.patch_reliability_modeling is not None:
+            global_feat, reliability_outputs = self.patch_reliability_modeling(cls_token, patch_tokens)
+            reliability_outputs["patch_grid"] = self.patch_grid
+
         semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
         if semantic_outputs:
             semantic_outputs["semantic_loss_scale"] = patch_tokens.new_tensor(self._get_semantic_loss_scale(epoch))
@@ -609,6 +698,7 @@ class build_transformer(nn.Module):
                 "selection_mask": selection_mask,
                 "selected_indices": selected_indices,
             }
+            outputs.update(reliability_outputs)
             outputs.update(semantic_outputs)
             return outputs
 
@@ -628,6 +718,7 @@ class build_transformer(nn.Module):
                 "selection_mask": selection_mask,
                 "selected_indices": selected_indices,
             }
+            feature_dict.update(reliability_outputs)
             if semantic_outputs:
                 feature_dict.update(semantic_outputs)
             return feature_dict
@@ -660,8 +751,9 @@ class build_transformer_local(nn.Module):
         self.enable_token_enrich = cfg.MODEL.TOKEN_ENRICH.ENABLED
         self.enable_local_group = cfg.MODEL.LOCAL_GROUP.ENABLED
         self.enable_sem_align = cfg.MODEL.SEM_ALIGN.ENABLED
+        self.use_reliability_pipeline = cfg.MODEL.RELIABILITY_PIPELINE
         self.use_patch_scorer = self.enable_patch_weight or self.enable_token_enrich
-        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align
+        self.token_branch_enabled = self.use_patch_scorer or self.enable_local_group or self.enable_sem_align or self.use_reliability_pipeline
         self.patch_weight_eps = cfg.MODEL.VIS_WEIGHT.EPS
         self.patch_weight_warmup_epochs = cfg.MODEL.VIS_WEIGHT.WARMUP_EPOCHS
         self.semantic_warmup_epochs = cfg.MODEL.SEM_ALIGN.WARMUP_EPOCHS
@@ -764,6 +856,18 @@ class build_transformer_local(nn.Module):
         else:
             self.semantic_align_head = None
         self.semantic_fusion = SemanticFusionBlock(self.in_planes, cfg) if self.enable_semantic_fusion else None
+
+        if self.use_reliability_pipeline:
+            self.patch_reliability_modeling = PatchReliabilityModeling(
+                self.in_planes,
+                cfg.MODEL.REL_HIDDEN_DIM,
+                cfg.MODEL.REL_USE_SOFTMAX,
+                cfg.MODEL.REL_FUSION_ALPHA,
+                cfg.MODEL.REL_GATE_INIT,
+            )
+            print('using reliability-aware local patch modeling with fusion alpha:{}'.format(cfg.MODEL.REL_FUSION_ALPHA))
+        else:
+            self.patch_reliability_modeling = None
 
         if self.use_patch_scorer:
             hidden_dim = max(1, self.in_planes // cfg.MODEL.VIS_WEIGHT.HIDDEN_DIM_RATIO)
@@ -890,6 +994,11 @@ class build_transformer_local(nn.Module):
             selection_mask = patch_context["selection_mask"]
             selected_indices = patch_context["selected_indices"]
 
+        reliability_outputs = {}
+        if self.patch_reliability_modeling is not None:
+            weighted_global_feat, reliability_outputs = self.patch_reliability_modeling(b1_feat[:, 0], patch_tokens)
+            reliability_outputs["patch_grid"] = self.patch_grid
+
         # JPM branch
         feature_length = features.size(1) - 1
         patch_length = feature_length // self.divide_length
@@ -918,6 +1027,22 @@ class build_transformer_local(nn.Module):
         b4_local_feat = x[:, patch_length*3:patch_length*4]
         b4_local_feat = self.b2(torch.cat((token, b4_local_feat), dim=1))
         local_feat_4 = b4_local_feat[:, 0]
+
+        if reliability_outputs:
+            local_weights = aggregate_patch_weights_to_local_branches(
+                reliability_outputs["patch_weights"],
+                self.divide_length,
+                self.rearrange,
+                self.shift_num,
+                self.shuffle_groups,
+            )
+            local_scale = local_weights * self.divide_length
+            local_feat_1 = local_feat_1 * local_scale[:, 0:1]
+            local_feat_2 = local_feat_2 * local_scale[:, 1:2]
+            local_feat_3 = local_feat_3 * local_scale[:, 2:3]
+            local_feat_4 = local_feat_4 * local_scale[:, 3:4]
+            reliability_outputs["local_weights"] = local_weights
+            reliability_outputs["local_scale"] = local_scale
 
         semantic_outputs = self._compute_semantic_outputs(patch_tokens, reference_patch_tokens, semantic_masks)
         if semantic_outputs:
@@ -986,6 +1111,7 @@ class build_transformer_local(nn.Module):
                     "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
                     "jpm_local_bn_feats": [local_feat_1_bn, local_feat_2_bn, local_feat_3_bn, local_feat_4_bn],
                 }
+                outputs.update(reliability_outputs)
                 outputs.update(semantic_outputs)
                 return outputs
 
@@ -1023,6 +1149,7 @@ class build_transformer_local(nn.Module):
                         "jpm_local_feats": [local_feat_1, local_feat_2, local_feat_3, local_feat_4],
                         "jpm_local_bn_feats": [local_feat_1_bn, local_feat_2_bn, local_feat_3_bn, local_feat_4_bn],
                     }
+                    feature_dict.update(reliability_outputs)
                     if semantic_outputs:
                         feature_dict.update(semantic_outputs)
                     return feature_dict

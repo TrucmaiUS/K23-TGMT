@@ -64,6 +64,49 @@ def apply_synthetic_occlusion(images, cfg):
     return occluded_images
 
 
+def build_reliability_occlusion(images, cfg):
+    occluded_images = images.clone()
+    batch_size, _, height, width = images.shape
+    occ_mask = torch.zeros(batch_size, 1, height, width, device=images.device, dtype=images.dtype)
+    if batch_size == 0:
+        return occluded_images, occ_mask
+
+    min_area = cfg.INPUT.REL_OCC_MIN_AREA
+    max_area = cfg.INPUT.REL_OCC_MAX_AREA
+    min_aspect = cfg.INPUT.REL_OCC_MIN_ASPECT
+    fill_value = cfg.INPUT.REL_OCC_FILL
+
+    for batch_index in range(batch_size):
+        if torch.rand(1, device=images.device).item() > cfg.INPUT.REL_OCC_PROB:
+            continue
+
+        area = height * width
+        for _ in range(10):
+            target_area = torch.empty(1, device=images.device).uniform_(min_area, max_area).item() * area
+            aspect_ratio = torch.empty(1, device=images.device).uniform_(
+                min_aspect,
+                1.0 / max(min_aspect, 1e-6)
+            ).item()
+            occ_height = int(round((target_area * aspect_ratio) ** 0.5))
+            occ_width = int(round((target_area / max(aspect_ratio, 1e-6)) ** 0.5))
+            if 0 < occ_height < height and 0 < occ_width < width:
+                top = torch.randint(0, height - occ_height + 1, (1,), device=images.device).item()
+                left = torch.randint(0, width - occ_width + 1, (1,), device=images.device).item()
+                occluded_images[batch_index, :, top:top + occ_height, left:left + occ_width] = fill_value
+                occ_mask[batch_index, :, top:top + occ_height, left:left + occ_width] = 1.0
+                break
+
+    return occluded_images, occ_mask
+
+
+def apply_occlusion_to_semantic_masks(semantic_masks, occ_mask):
+    if semantic_masks is None:
+        return None
+    occluded_masks = semantic_masks.clone()
+    occluded_masks[occ_mask.squeeze(1) > 0] = 0
+    return occluded_masks
+
+
 def run_validation(model, val_loader, evaluator, device):
     evaluator.reset()
     model.eval()
@@ -143,17 +186,46 @@ def do_train(cfg,
             target_cam = target_cam.to(device)
             target_view = target_view.to(device)
             with amp.autocast(enabled=device.type == "cuda"):
-                outputs = model(
-                    img,
-                    target,
-                    cam_label=target_cam,
-                    view_label=target_view,
-                    epoch=epoch,
-                    semantic_masks=semantic_masks
-                )
-                loss = loss_fn(outputs, target, target_cam)
+                if cfg.MODEL.RELIABILITY_PIPELINE:
+                    occ_img, occ_mask = build_reliability_occlusion(img, cfg)
+                    occ_semantic_masks = apply_occlusion_to_semantic_masks(semantic_masks, occ_mask)
+                    outputs = model(
+                        img,
+                        target,
+                        cam_label=target_cam,
+                        view_label=target_view,
+                        epoch=epoch,
+                        semantic_masks=semantic_masks
+                    )
+                    occ_outputs = model(
+                        occ_img,
+                        target,
+                        cam_label=target_cam,
+                        view_label=target_view,
+                        epoch=epoch,
+                        semantic_masks=occ_semantic_masks
+                    )
+                    loss = loss_fn(
+                        {
+                            "clean_outputs": outputs,
+                            "occ_outputs": occ_outputs,
+                            "occ_mask": occ_mask,
+                        },
+                        target,
+                        target_cam
+                    )
+                else:
+                    outputs = model(
+                        img,
+                        target,
+                        cam_label=target_cam,
+                        view_label=target_view,
+                        epoch=epoch,
+                        semantic_masks=semantic_masks
+                    )
+                    loss = loss_fn(outputs, target, target_cam)
 
-                if cfg.MODEL.OCC_AUG.ENABLED and epoch >= cfg.MODEL.OCC_AUG.START_EPOCH:
+                if not cfg.MODEL.RELIABILITY_PIPELINE and cfg.MODEL.OCC_AUG.ENABLED and epoch >= cfg.MODEL.OCC_AUG.START_EPOCH:
                     occ_img = apply_synthetic_occlusion(img, cfg)
                     occ_outputs = model(
                         occ_img,
