@@ -1,0 +1,88 @@
+# LaTeX build artifacts
+*.aux
+*.lof
+*.log
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+*.synctex.gz
+*.synctex.gz(busy)
+
+# LaTeX packages / tools
+*.fdb_latexmk
+*.bak
+*.bbl
+*.bcf
+*.blg
+*-blx.aux
+*-blx.bib
+*.brf
+*.dvi
+*.idx
+*.ilg
+*.ind
+*.ist
+*.run.xml
+*.xdv
+
+# Glossaries / nomencl
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.glsdefs
+*.lzo
+*.nlg
+*.nlo
+*.nls
+
+# Makeindex / xindy
+*.xdy
+
+# BibTeX / Biber
+*.bib.bak
+
+# minted
+_minted*
+*.pyg
+
+# TikZ / pgfplots
+*.nav
+*.snm
+*.vrb
+*.pgf-plot.gnuplot
+*.pgf-plot.table
+
+# LaTeXmk output directories (common)
+latexmk-out/
+out/
+build/
+
+# Latexindent
+latexindent.yaml
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS junk (Windows/macOS)
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# PDF output (optional): uncomment if you don't want to version PDFs
+*.pdf
+
+# Local datasets (keep only placeholder guide)
+data/*
+!data/README.md

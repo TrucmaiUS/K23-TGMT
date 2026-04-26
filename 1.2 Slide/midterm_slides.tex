@@ -1,0 +1,574 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{tikz}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usetikzlibrary{positioning,arrows.meta}
+
+\setsansfont{Arial}
+\setmonofont{Consolas}
+
+\usetheme{Madrid}
+\usecolortheme{dolphin}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{caption}[numbered]
+\setbeameroption{hide notes}
+\graphicspath{{figures/}{assets/}}
+
+\definecolor{MainBlue}{HTML}{1E5A8A}
+\definecolor{AccentGreen}{HTML}{047857}
+\definecolor{AccentOrange}{HTML}{B45309}
+\definecolor{AccentPurple}{HTML}{6D28D9}
+\definecolor{AccentRed}{HTML}{BE123C}
+\definecolor{SoftGray}{HTML}{F2F4F7}
+\definecolor{SoftBlue}{HTML}{EAF2F8}
+\definecolor{SoftGreen}{HTML}{EAF7F0}
+\definecolor{SoftOrange}{HTML}{FFF4E6}
+
+\setbeamercolor{structure}{fg=MainBlue}
+\setbeamercolor{frametitle}{fg=white,bg=MainBlue}
+\setbeamercolor{title}{fg=MainBlue}
+\setbeamercolor{block title}{fg=white,bg=MainBlue}
+\setbeamercolor{block body}{bg=SoftGray,fg=black}
+\setbeamerfont{frametitle}{size=\large,series=\bfseries}
+
+\newcommand{\keymessage}[1]{\begin{block}{Thông điệp chính}#1\end{block}}
+\newcommand{\figcaption}[1]{\vspace{.05cm}{\scriptsize #1}}
+\newcommand{\methodbox}[3]{\node[draw,rounded corners,align=center,minimum width=#1,minimum height=.72cm,fill=#2] {#3};}
+
+\title[Person Re-ID]{Person Re-Identification dựa trên TransReID}
+\subtitle{Local Reliability, Semantic Alignment và hướng kết hợp}
+\author[Mai -- Huy]{\texorpdfstring{23127224 -- Nguyễn Lê Trúc Mai\\23127199 -- Trần Gia Huy}{23127224 -- Nguyễn Lê Trúc Mai; 23127199 -- Trần Gia Huy}}
+\institute{Đồ án môn Thị giác máy tính}
+\date{26/04/2026}
+\titlegraphic{\includegraphics[height=1.1cm]{HCMUS.png}}
+
+\begin{document}
+
+% 1
+\begin{frame}
+  \titlepage
+  \note{Giới thiệu ngắn gọn đề tài: đồ án khảo sát TransReID và ba biến thể mở rộng dựa trên patch token cho bài toán Person Re-ID.}
+\end{frame}
+
+% 2
+\begin{frame}{Cấu trúc báo cáo}
+  \begin{enumerate}
+    \item Bài toán Person Re-Identification.
+    \item Mô hình nền TransReID.
+    \item Các hướng mở rộng dựa trên patch token.
+    \item Thiết lập thực nghiệm trên Market-1501.
+    \item Kết quả định lượng, định tính và chi phí suy luận.
+    \item Kết luận và định hướng phát triển.
+  \end{enumerate}
+  \vspace{.22cm}
+  \keymessage{Báo cáo tập trung vào cải thiện biểu diễn cục bộ trong Re-ID thông qua hai tín hiệu bổ trợ: độ tin cậy của patch và ngữ nghĩa vùng cơ thể.}
+  \note{Nhấn mạnh rằng mạch trình bày đi từ bài toán, mô hình nền, hạn chế, phương pháp mở rộng rồi đến đánh giá thực nghiệm.}
+\end{frame}
+
+\section{Bối cảnh và bài toán}
+
+% 3
+\begin{frame}{Bài toán Person Re-Identification}
+  \begin{columns}[T,onlytextwidth]
+    \column{.52\linewidth}
+    \begin{itemize}
+      \item Đầu vào gồm một ảnh truy vấn và tập ảnh gallery từ nhiều camera.
+      \item Mô hình trích xuất embedding cho ảnh truy vấn và từng ảnh gallery.
+      \item Gallery được sắp xếp theo độ tương đồng trong không gian embedding.
+      \item Mục tiêu là đưa ảnh cùng danh tính lên vị trí cao trong danh sách truy hồi.
+    \end{itemize}
+    \vspace{.2cm}
+    \keymessage{Person Re-ID là bài toán học biểu diễn cho truy hồi danh tính, không chỉ là bài toán phân loại ảnh.}
+    \column{.44\linewidth}
+    \centering
+    \begin{tikzpicture}[node distance=.78cm,>=Latex]
+      \node[draw,rounded corners,fill=SoftBlue,minimum width=3.5cm,minimum height=.85cm] (q) {Ảnh truy vấn};
+      \node[draw,rounded corners,fill=SoftGray,minimum width=3.5cm,minimum height=.85cm,below=of q] (e) {Embedding model};
+      \node[draw,rounded corners,fill=SoftGreen,minimum width=3.5cm,minimum height=.85cm,below=of e] (g) {Gallery đã xếp hạng};
+      \draw[->,thick] (q) -- (e);
+      \draw[->,thick] (e) -- (g);
+    \end{tikzpicture}
+    \figcaption{Khoảng cách embedding quyết định thứ hạng truy hồi trong gallery.}
+  \end{columns}
+  \note{Giải thích query, gallery và ranking. Trọng tâm là học embedding ổn định, không phải dự đoán một nhãn lớp cố định.}
+\end{frame}
+
+% 4
+\begin{frame}{Thách thức trong học biểu diễn Re-ID}
+  \begin{columns}[T,onlytextwidth]
+    \column{.55\linewidth}
+    \begin{itemize}
+      \item Cùng một người có thể thay đổi mạnh về tư thế, góc nhìn, ánh sáng và camera.
+      \item Ảnh có thể bị che khuất, crop lệch, độ phân giải thấp hoặc nhiễu nền.
+      \item Patch cục bộ có thể chứa nền hoặc vật cản thay vì thông tin định danh.
+      \item Embedding cần ổn định trước biến thiên liên camera và ít bị chi phối bởi vùng nhiễu.
+    \end{itemize}
+    \column{.41\linewidth}
+    \begin{block}{Thước đo đánh giá}
+      \begin{itemize}
+        \item mAP: chất lượng toàn bộ danh sách truy hồi.
+        \item CMC Rank-k: khả năng xuất hiện ảnh đúng trong top-k.
+        \item Latency: chi phí suy luận khi triển khai.
+      \end{itemize}
+    \end{block}
+  \end{columns}
+  \vspace{.16cm}
+  \keymessage{Khó khăn cốt lõi là học embedding phân biệt danh tính nhưng bền vững trước biến thiên quan sát.}
+  \note{Nêu rõ tại sao Re-ID khó hơn so khớp ảnh đơn giản: cùng ID có thể rất khác, khác ID có thể rất giống.}
+\end{frame}
+
+\section{Mô hình nền}
+
+% 5
+\begin{frame}{TransReID: mô hình nền dựa trên Vision Transformer}
+  \begin{columns}[T,onlytextwidth]
+    \column{.45\linewidth}
+    \begin{itemize}
+      \item ViT backbone chia ảnh thành chuỗi patch token.
+      \item Side Information Embedding bổ sung tín hiệu camera/viewpoint.
+      \item Jigsaw Patch Module khai thác đặc trưng cục bộ từ các nhóm patch.
+      \item ID loss và triplet loss hỗ trợ học embedding phân biệt danh tính.
+    \end{itemize}
+    \vspace{.14cm}
+    \keymessage{TransReID là baseline mạnh nhờ kết hợp biểu diễn toàn cục và cục bộ.}
+    \column{.51\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.62\textheight,keepaspectratio]{transreid_framework.png}
+    \figcaption{Kiến trúc TransReID được dùng làm nền cho các biến thể mở rộng trong đồ án.}
+  \end{columns}
+  \note{Không đi quá sâu vào chi tiết công thức; chỉ cần nhấn mạnh các khối chính: ViT, SIE, JPM và hai loss.}
+\end{frame}
+
+% 6
+\begin{frame}{Hạn chế của biểu diễn cục bộ dựa trên patch}
+  \begin{columns}[T,onlytextwidth]
+    \column{.52\linewidth}
+    \begin{itemize}
+      \item Patch cùng vị trí ảnh không đảm bảo tương ứng cùng vùng cơ thể khi tư thế hoặc crop thay đổi.
+      \item Patch bị che khuất hoặc chứa background vẫn có thể ảnh hưởng đến quá trình matching.
+      \item Biểu diễn cục bộ cần thêm tín hiệu về độ tin cậy và ý nghĩa semantic.
+      \item Đây là động cơ cho Local Reliability và Semantic Alignment.
+    \end{itemize}
+    \column{.44\linewidth}
+    \begin{block}{Luận điểm mở rộng}
+      Vấn đề không chỉ là trích xuất local feature, mà là xác định local feature nào đáng tin và có ý nghĩa cho truy hồi danh tính.
+    \end{block}
+  \end{columns}
+  \note{Chuyển từ baseline sang động cơ nghiên cứu. Tránh nói như câu hỏi trực tiếp; trình bày như một hạn chế phương pháp.}
+\end{frame}
+
+% 7
+\begin{frame}{Các hướng mở rộng từ TransReID}
+  \small
+  \begin{tabularx}{\linewidth}{>{\bfseries}p{.25\linewidth}X X}
+    \toprule
+    Hướng mở rộng & Tín hiệu bổ sung & Vai trò trong biểu diễn cục bộ \\
+    \midrule
+    Local Reliability & Mức độ tin cậy của patch token & Giảm ảnh hưởng của vùng nhiễu hoặc bị che khuất. \\
+    \addlinespace
+    Semantic Alignment & Nhóm semantic của vùng cơ thể & Căn chỉnh local feature theo bộ phận cơ thể giữa các ảnh. \\
+    \addlinespace
+    Semantic + Reliability & Kết hợp semantic và reliability & Khai thác đồng thời ý nghĩa vùng cơ thể và độ tin cậy cục bộ. \\
+    \bottomrule
+  \end{tabularx}
+  \vspace{.24cm}
+  \keymessage{Các hướng mở rộng khai thác những tín hiệu bổ trợ khác nhau trên cùng backbone TransReID.}
+  \note{Đây là slide bản đồ cho toàn bộ phần phương pháp. Nhấn mạnh ba hướng là ba cách làm giàu patch token.}
+\end{frame}
+
+\section{Phương pháp mở rộng}
+
+% 8
+\begin{frame}{Local Reliability: điều chỉnh đóng góp của patch cục bộ}
+  \begin{columns}[T,onlytextwidth]
+    \column{.50\linewidth}
+    \begin{itemize}
+      \item Mỗi patch token được gán một mức độ tin cậy.
+      \item Patch bị che khuất hoặc chứa nhiễu nền được giảm trọng số.
+      \item Reliability score được dùng trong quá trình tổng hợp đặc trưng cục bộ.
+      \item Synthetic occlusion cung cấp tín hiệu phụ để học vùng visible/occluded.
+    \end{itemize}
+    \vspace{.12cm}
+    \keymessage{Local Reliability hướng đến embedding ít bị chi phối bởi các vùng ảnh không đáng tin.}
+    \column{.46\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.58\textheight,keepaspectratio]{local_synthetic_occlusion_target.png}
+    \figcaption{Ví dụ tín hiệu phụ cho việc học vùng bị che khuất.}
+  \end{columns}
+  \note{Giải thích rằng reliability không thay thế embedding chính, mà điều chỉnh đóng góp của local token khi fusion.}
+\end{frame}
+
+% 9
+\begin{frame}{Cơ chế tích hợp độ tin cậy cục bộ}
+  \centering
+  \begin{tikzpicture}[>=Latex,scale=.90,transform shape]
+    \tikzstyle{box}=[draw,rounded corners,align=center,minimum width=3.35cm,minimum height=.72cm,fill=SoftGray]
+    \node[box,fill=SoftBlue] (img) at (0,1.45) {Ảnh đầu vào};
+    \node[box] (patch) at (4.0,1.45) {Patch tokens};
+    \node[box,fill=SoftOrange] (rel) at (8.0,1.45) {Reliability prediction};
+    \node[box,fill=SoftGreen] (fusion) at (8.0,0) {Reliability-aware\\local feature fusion};
+    \node[box] (emb) at (4.0,0) {Re-ID embedding};
+    \node[box,fill=SoftBlue] (rank) at (0,0) {Ranked gallery};
+    \draw[->,thick] (img) -- (patch);
+    \draw[->,thick] (patch) -- (rel);
+    \draw[->,thick] (rel) -- (fusion);
+    \draw[->,thick,dashed] (patch.south) -- ++(0,-.32) -| (fusion.north);
+    \draw[->,thick] (fusion) -- (emb);
+    \draw[->,thick] (emb) -- (rank);
+  \end{tikzpicture}
+  \vspace{.26cm}
+  \begin{itemize}
+    \item Đặc trưng cục bộ vẫn được học từ patch token của TransReID.
+    \item Điểm tin cậy điều chỉnh mức đóng góp của từng patch trước khi tạo embedding cuối.
+  \end{itemize}
+  \keymessage{Cơ chế này làm cho fusion cục bộ phụ thuộc vào chất lượng quan sát của từng vùng ảnh.}
+  \note{Slide này thay cho hình pipeline quá nhiều chữ. Trình bày dòng xử lý chính thay vì chi tiết cài đặt.}
+\end{frame}
+
+% 10
+\begin{frame}{Trực quan hóa độ tin cậy cục bộ}
+  \centering
+  \includegraphics[width=.88\linewidth,height=.48\textheight,keepaspectratio]{local_reliability_heatmap.png}
+  \figcaption{Ảnh gốc, bản đồ reliability và overlay đã được căn chỉnh cùng kích thước đầu vào của mô hình.}
+  \vspace{.08cm}
+  \begin{itemize}
+    \item Heatmap minh họa mức đóng góp tương đối của các vùng ảnh trong quá trình tổng hợp đặc trưng.
+    \item Đây là phân tích định tính, không thay thế các metric định lượng.
+  \end{itemize}
+  \note{Nói rõ heatmap giúp giải thích cơ chế, nhưng kết luận hiệu quả vẫn dựa trên mAP và Rank-k.}
+\end{frame}
+
+% 11
+\begin{frame}{Semantic Alignment: căn chỉnh patch theo vùng cơ thể}
+  \begin{columns}[T,onlytextwidth]
+    \column{.50\linewidth}
+    \begin{itemize}
+      \item Human parser phân tách ảnh người thành các vùng cơ thể có ý nghĩa.
+      \item Mỗi patch token được gán target semantic theo vùng chiếm ưu thế.
+      \item Semantic target giúp local feature gắn với bộ phận cơ thể thay vì chỉ tọa độ ảnh.
+      \item Cơ chế này hỗ trợ so sánh các vùng tương ứng giữa camera.
+    \end{itemize}
+    \vspace{.12cm}
+    \keymessage{Semantic Alignment bổ sung ý nghĩa bộ phận cơ thể cho patch token.}
+    \column{.46\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.58\textheight,keepaspectratio]{semantic_pipeline_diagram.png}
+    \figcaption{Quy trình chuyển mask semantic thành target cho lưới patch của ViT.}
+  \end{columns}
+  \note{Nhấn mạnh khác biệt với Local Reliability: semantic trả lời về ý nghĩa vùng cơ thể, không chỉ độ tin cậy.}
+\end{frame}
+
+% 12
+\begin{frame}{Quy trình tạo semantic target cho patch token}
+  \begin{columns}[T,onlytextwidth]
+    \column{.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.62\textheight,keepaspectratio]{semantic_framework.png}
+    \figcaption{Semantic supervision được gắn vào biểu diễn patch-level của mô hình.}
+    \column{.48\linewidth}
+    \begin{itemize}
+      \item Sinh human parsing mask cho từng ảnh.
+      \item Gom nhãn parser thành các nhóm semantic cấp cao.
+      \item Đồng bộ phép biến đổi dữ liệu giữa ảnh và mask.
+      \item Tạo semantic patch target và visibility mask để giám sát patch token.
+    \end{itemize}
+  \end{columns}
+  \note{Nếu cần trả lời câu hỏi kỹ thuật, có thể nói các bước này được hiện thực hóa bằng script và module trong nhánh semantic, nhưng không đưa tên file lên slide.}
+\end{frame}
+
+% 13
+\begin{frame}{Human Parsing Mask và Semantic Patch Target}
+  \begin{columns}[T,onlytextwidth]
+    \column{.50\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.62\textheight,keepaspectratio]{semantic_real_examples.png}
+    \figcaption{Human parser cung cấp thông tin foreground và vùng cơ thể.}
+    \column{.46\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.62\textheight,keepaspectratio]{semantic_patch_distribution.png}
+    \figcaption{Patch target chuyển thông tin semantic từ mask sang lưới patch.}
+  \end{columns}
+  \note{Dùng slide này để giải thích dữ liệu giám sát phụ: mask ở không gian ảnh được lượng tử hóa về patch grid của ViT.}
+\end{frame}
+
+% 14
+\begin{frame}{So sánh human parsing mask và mask heuristic}
+  \centering
+  \includegraphics[width=.86\linewidth,height=.61\textheight,keepaspectratio]{semantic_real_vs_heuristic.png}
+  \figcaption{Mask từ human parser bám sát silhouette, trang phục và tư thế hơn so với các dải hình học xấp xỉ.}
+  \vspace{.04cm}
+  \keymessage{Human parsing mask phù hợp hơn để tạo semantic supervision cho patch token.}
+  \note{Trình bày trung tính: mask heuristic đơn giản và dễ tạo, nhưng thiếu thông tin hình dạng người và tư thế.}
+\end{frame}
+
+% 15
+\begin{frame}{Tính nhất quán semantic giữa các góc nhìn camera}
+  \centering
+  \includegraphics[width=.84\linewidth,height=.61\textheight,keepaspectratio]{semantic_same_identity.png}
+  \figcaption{Cùng một ID có thể xuất hiện dưới nhiều tư thế và camera, nhưng semantic mask giúp quy chiếu các vùng cơ thể tương ứng.}
+  \vspace{.04cm}
+  \keymessage{Semantic Alignment giúp local feature ít phụ thuộc hơn vào vị trí hình học tuyệt đối.}
+  \note{Nêu ví dụ: vùng torso hoặc legs có thể nằm ở vị trí ảnh khác nhau, nhưng semantic mask vẫn tạo khung tham chiếu theo bộ phận cơ thể.}
+\end{frame}
+
+% 16
+\begin{frame}{Kết hợp căn chỉnh semantic và độ tin cậy cục bộ}
+  \begin{columns}[T,onlytextwidth]
+    \column{.47\linewidth}
+    \begin{itemize}
+      \item Semantic Alignment xác định ý nghĩa vùng cơ thể của patch.
+      \item Local Reliability ước lượng mức độ tin cậy của patch.
+      \item Hướng kết hợp khai thác đồng thời hai tín hiệu trong quá trình tổng hợp đặc trưng.
+      \item Mục tiêu là tăng chất lượng embedding khi có thay đổi tư thế, nhiễu nền hoặc che khuất.
+    \end{itemize}
+    \column{.49\linewidth}
+    \centering
+    \begin{tikzpicture}[node distance=.46cm,>=Latex,scale=.78,transform shape]
+      \tikzstyle{box}=[draw,rounded corners,align=center,minimum width=2.50cm,minimum height=.62cm,fill=SoftGray]
+      \node[box,fill=SoftBlue] (img) {Ảnh đầu vào};
+      \node[box,below=of img] (vit) {Patch tokens};
+      \node[box,fill=SoftGreen,below left=.55cm and .55cm of vit] (sem) {Semantic\\groups};
+      \node[box,fill=SoftOrange,below right=.55cm and .55cm of vit] (rel) {Reliability\\scores};
+      \node[box,below=1.55cm of vit] (fusion) {Feature fusion\\có cấu trúc};
+      \node[box,fill=SoftBlue,below=of fusion] (emb) {Re-ID embedding};
+      \node[box,fill=SoftGreen,below=of emb] (rank) {Ranking};
+      \draw[->,thick] (img) -- (vit);
+      \draw[->,thick] (vit) -- (sem);
+      \draw[->,thick] (vit) -- (rel);
+      \draw[->,thick] (sem) -- (fusion);
+      \draw[->,thick] (rel) -- (fusion);
+      \draw[->,thick] (fusion) -- (emb);
+      \draw[->,thick] (emb) -- (rank);
+    \end{tikzpicture}
+  \end{columns}
+  \vspace{.10cm}
+  \keymessage{Hướng kết hợp nhằm giữ lại các vùng vừa có ý nghĩa semantic, vừa đáng tin cậy cho matching.}
+  \note{Nhấn mạnh đây là giả thuyết phương pháp: hai tín hiệu bổ trợ nhau. Không nói rằng đã giải quyết triệt để mọi lỗi.}
+\end{frame}
+
+\section{Thiết lập thực nghiệm}
+
+% 17
+\begin{frame}{Thiết lập thực nghiệm trên Market-1501}
+  \small
+  \begin{tabularx}{\linewidth}{>{\bfseries}p{.25\linewidth}X X}
+    \toprule
+    Biến thể & Mục đích đánh giá & Vai trò trong so sánh \\
+    \midrule
+    TransReID baseline & Mô hình nền dựa trên ViT & Mốc so sánh gốc. \\
+    Semantic Alignment & Giám sát semantic cho patch token & Đánh giá tác động của thông tin vùng cơ thể. \\
+    Local Reliability & Điều chỉnh đóng góp của patch cục bộ & Đánh giá tác động của độ tin cậy patch. \\
+    Semantic + Reliability & Kết hợp hai tín hiệu bổ trợ & Đánh giá khả năng bổ sung lẫn nhau. \\
+    \bottomrule
+  \end{tabularx}
+  \vspace{.22cm}
+  \begin{block}{Protocol đánh giá}
+    Dataset Market-1501; các mô hình dùng cùng backbone và protocol đánh giá; metric gồm mAP, CMC Rank-1/Rank-5/Rank-10 và latency.
+  \end{block}
+  \note{Nói rõ đây là so sánh trong cùng pipeline thực nghiệm. Không cần nêu đường dẫn hay tên checkpoint trên slide.}
+\end{frame}
+
+\section{Kết quả và phân tích}
+
+% 18
+\begin{frame}{Kết quả định lượng trên Market-1501}
+  \centering
+  \includegraphics[width=.95\linewidth,height=.66\textheight,keepaspectratio]{eval_summary_table.png}
+  \figcaption{Kết quả cho thấy các tín hiệu bổ trợ cho patch token có xu hướng cải thiện chất lượng retrieval so với baseline.}
+  \vspace{.08cm}
+  \keymessage{Semantic + Reliability đạt mAP và Rank-1 cao nhất trong bộ thử nghiệm, nhưng chênh lệch Rank-1 tương đối nhỏ.}
+  \note{Nhấn mạnh kết quả cao nhất trong bộ thử nghiệm, không dùng từ tuyệt đối. Chỉ rõ baseline đã mạnh nên Rank-1 khó tăng nhiều.}
+\end{frame}
+
+% 19
+\begin{frame}{So sánh mAP và CMC Rank-k}
+  \centering
+  \includegraphics[width=.90\linewidth,height=.61\textheight,keepaspectratio]{eval_metrics_grouped_bar.png}
+  \figcaption{Mức tăng mAP nổi bật hơn so với Rank-k, cho thấy chất lượng sắp xếp toàn bộ gallery được cải thiện.}
+  \vspace{.04cm}
+  \keymessage{Các hướng mở rộng cho thấy xu hướng cải thiện so với baseline trên Market-1501.}
+  \note{Giải thích mAP nhạy với toàn bộ ranking, trong khi Rank-1 chỉ đo ảnh đúng đầu tiên.}
+\end{frame}
+
+% 20
+\begin{frame}{Phân tích kết quả định lượng}
+  \small
+  \begin{tabularx}{\linewidth}{>{\bfseries}p{.26\linewidth}X}
+    \toprule
+    Quan sát & Diễn giải \\
+    \midrule
+    Rank-1 baseline đã cao & Biên độ cải thiện Rank-1 tự nhiên bị giới hạn. \\
+    \addlinespace
+    mAP tăng rõ hơn Rank-1 & Chất lượng toàn bộ danh sách ranking được cải thiện tốt hơn so với chỉ top-1. \\
+    \addlinespace
+    Local Reliability tăng mAP tốt & Giảm ảnh hưởng của vùng nhiễu có lợi cho truy hồi nhiều ảnh đúng. \\
+    \addlinespace
+    Hướng kết hợp đạt kết quả cao nhất & Semantic và reliability có khả năng bổ trợ nhau trong biểu diễn cục bộ. \\
+    \bottomrule
+  \end{tabularx}
+  \vspace{.18cm}
+  \keymessage{Kết quả hiện tại ủng hộ hướng mở rộng patch-level, nhưng cần thêm dataset và ablation để củng cố tính khái quát.}
+  \note{Đây là slide kiểm soát overclaim. Nêu kết quả theo xu hướng và yêu cầu thực nghiệm bổ sung.}
+\end{frame}
+
+% 21
+\begin{frame}{Quá trình hội tụ trong huấn luyện}
+  \begin{columns}[T,onlytextwidth]
+    \column{.58\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.62\textheight,keepaspectratio]{eval_validation_map_rank1_curves.png}
+    \figcaption{Validation mAP và Rank-1 theo epoch của các biến thể.}
+    \column{.38\linewidth}
+    \begin{itemize}
+      \item Các mô hình hội tụ tương đối ổn định.
+      \item Khoảng cách giữa các biến thể không quá lớn.
+      \item Checkpoint tốt nhất của hướng kết hợp nhỉnh hơn nhẹ ở mAP/Rank-1.
+    \end{itemize}
+  \end{columns}
+  \note{Nếu người nghe hỏi về loss/accuracy train, có thể nói các đường train đã được kiểm tra và được chuyển khỏi deck chính để giảm tải.}
+\end{frame}
+
+% 22
+\begin{frame}{So sánh định tính trên cùng truy vấn}
+  \centering
+  \includegraphics[height=.76\textheight,keepaspectratio]{multi_model_same_query_topk.png}
+  \figcaption{Kết quả truy hồi Top-K minh họa cách các mô hình sắp xếp ảnh đúng và ảnh sai trên cùng query/gallery.}
+  \note{Không cần đọc hết từng ô; chỉ hướng người xem quan sát thứ hạng của match đúng và khác biệt giữa các mô hình.}
+\end{frame}
+
+% 23
+\begin{frame}{Phân tích định tính và trường hợp lỗi}
+  \begin{columns}[T,onlytextwidth]
+    \column{.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.66\textheight,keepaspectratio]{local_failure_cases.png}
+    \column{.48\linewidth}
+    \figcaption{Ảnh đúng có thể xuất hiện ở thứ hạng thấp hơn do hard negatives hoặc điều kiện quan sát khó.}
+    \vspace{.12cm}
+    \begin{itemize}
+      \item Lỗi thường liên quan đến tư thế tương tự, trang phục giống, background, crop hoặc occlusion.
+      \item Các trường hợp này giúp nhận diện giới hạn của embedding hiện tại.
+    \end{itemize}
+  \end{columns}
+  \note{Nêu rõ Rank-1 cao vẫn có lỗi top-1. Phân tích lỗi có giá trị vì Re-ID là bài toán ranking.}
+\end{frame}
+
+% 24
+\begin{frame}{Vai trò của phân tích lỗi trong bài toán ranking}
+  \begin{itemize}
+    \item Re-ID là bài toán ranking nên không chỉ xét đúng/sai tại Top-1.
+    \item Phân tích các thứ hạng thấp hơn giúp phát hiện hard negatives và nguyên nhân nhầm lẫn.
+    \item Failure cases là cơ sở cho phân tích theo occlusion, camera ID, tư thế và nền ảnh.
+    \item Kết quả định tính cần được diễn giải cùng với mAP và CMC Rank-k.
+  \end{itemize}
+  \vspace{.22cm}
+  \keymessage{Rank-1 cao không đồng nghĩa mô hình đã xử lý đầy đủ mọi tình huống Re-ID.}
+  \note{Slide này dùng để chuyển từ hình minh họa sang kết luận có tính phương pháp: lỗi là nguồn thông tin cho cải tiến tiếp theo.}
+\end{frame}
+
+% 25
+\begin{frame}{Đánh đổi giữa độ chính xác và chi phí suy luận}
+  \begin{columns}[T,onlytextwidth]
+    \column{.56\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=.62\textheight,keepaspectratio]{eval_accuracy_latency_tradeoff.png}
+    \figcaption{Quan hệ giữa mAP và latency trung bình trong thí nghiệm.}
+    \column{.40\linewidth}
+    \begin{itemize}
+      \item Semantic Alignment có latency gần baseline.
+      \item Local Reliability và hướng kết hợp tăng nhẹ chi phí suy luận.
+      \item Overhead đo được nhỏ so với mức tăng mAP trong thiết lập hiện tại.
+      \item Cần đo lại trong môi trường ổn định hơn nếu hướng đến triển khai thực tế.
+    \end{itemize}
+  \end{columns}
+  \note{Trình bày trade-off thận trọng: latency trong thí nghiệm là tham khảo, chưa phải benchmark triển khai sản phẩm.}
+\end{frame}
+
+% 26
+\begin{frame}{Tổng hợp đánh đổi thực nghiệm}
+  \small
+  \begin{tabularx}{\linewidth}{>{\bfseries}p{.28\linewidth}X X}
+    \toprule
+    Biến thể & Lợi ích quan sát được & Chi phí suy luận \\
+    \midrule
+    Semantic Alignment & Tăng nhẹ mAP và Rank-1 & Gần baseline. \\
+    \addlinespace
+    Local Reliability & Cải thiện mAP rõ hơn Rank-1 & Tăng khoảng 0.16 ms/ảnh trong phép đo hiện tại. \\
+    \addlinespace
+    Semantic + Reliability & Đạt kết quả cao nhất trong bộ thử nghiệm & Tăng khoảng 0.157 ms/ảnh trong phép đo hiện tại. \\
+    \bottomrule
+  \end{tabularx}
+  \vspace{.22cm}
+  \keymessage{Hướng kết hợp có tiềm năng vì cải thiện retrieval trong khi overhead vẫn nhỏ ở phép đo hiện tại.}
+  \note{Nói rõ các con số latency phụ thuộc phần cứng và cách đo; kết luận chính là xu hướng trade-off.}
+\end{frame}
+
+\section{Tổng kết}
+
+% 27
+\begin{frame}{Đóng góp chính của đồ án}
+  \begin{itemize}
+    \item Thiết lập pipeline đánh giá Person Re-ID dựa trên TransReID.
+    \item Huấn luyện và đánh giá bốn biến thể: baseline, Semantic Alignment, Local Reliability và Semantic + Reliability.
+    \item Xây dựng trực quan hóa phục vụ phân tích retrieval, semantic mask, reliability và failure cases.
+    \item Tổng hợp đánh giá định lượng, định tính và chi phí suy luận.
+  \end{itemize}
+  \note{Tập trung vào đóng góp thực nghiệm và phân tích, không trình bày như danh sách file đã tạo.}
+\end{frame}
+
+% 28
+\begin{frame}{Hạn chế hiện tại}
+  \begin{itemize}
+    \item Thực nghiệm mới tập trung trên Market-1501.
+    \item Mức tăng Rank-1 còn nhỏ do baseline đã mạnh.
+    \item Chất lượng semantic supervision phụ thuộc vào human parser.
+    \item Chưa có ablation đủ chi tiết cho từng loss và từng thành phần fusion.
+  \end{itemize}
+  \vspace{.18cm}
+  \keymessage{Kết quả cho thấy xu hướng cải thiện trên Market-1501, nhưng cần thêm thực nghiệm để khẳng định tính khái quát.}
+  \note{Giữ thái độ học thuật trung thực: có kết quả tích cực nhưng chưa kết luận quá rộng.}
+\end{frame}
+
+% 29
+\begin{frame}{Định hướng phát triển tiếp theo}
+  \begin{itemize}
+    \item Đánh giá trên Occluded-DukeMTMC hoặc tập có nhiều occlusion.
+    \item Phân tích hard cases: baseline sai nhưng mô hình kết hợp đúng, và ngược lại.
+    \item Ablation từng thành phần: semantic supervision, reliability loss và fusion strategy.
+    \item Phân tích lỗi theo camera ID, tư thế, occlusion và background.
+    \item Tối ưu inference nếu hướng đến triển khai thực tế.
+  \end{itemize}
+  \note{Nêu các bước tiếp theo theo thứ tự ưu tiên: dataset khó hơn, ablation, phân tích lỗi, rồi tối ưu triển khai.}
+\end{frame}
+
+% 30
+\begin{frame}{Kết luận}
+  \begin{columns}[T,onlytextwidth]
+    \column{.48\linewidth}
+    \begin{block}{Local Reliability}
+      Giảm ảnh hưởng của patch nhiễu, bị che khuất hoặc chứa nền trong biểu diễn cục bộ.
+    \end{block}
+    \begin{block}{Semantic Alignment}
+      Căn chỉnh patch token theo vùng cơ thể có ý nghĩa thay vì chỉ dựa trên vị trí hình học.
+    \end{block}
+    \column{.48\linewidth}
+    \begin{block}{Hướng kết hợp}
+      Đạt kết quả cao nhất trong bộ thử nghiệm Market-1501 và gợi ý tính bổ trợ giữa hai tín hiệu.
+    \end{block}
+    \begin{block}{Thông điệp}
+      Person Re-ID cần embedding ổn định giữa nhiều camera và biểu diễn cục bộ có cấu trúc hơn.
+    \end{block}
+  \end{columns}
+  \vspace{.18cm}
+  \centering
+  \Large Cảm ơn thầy/cô và các bạn đã lắng nghe
+  \note{Kết thúc bằng thông điệp chính: local reliability xử lý độ tin cậy, semantic alignment xử lý ý nghĩa vùng cơ thể, hướng kết hợp là biến thể tốt nhất trong phạm vi thí nghiệm.}
+\end{frame}
+
+\end{document}

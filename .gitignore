@@ -51,3 +51,4 @@ source_code/**/best_checkpoint*
 source_code/**/latest_checkpoint*
 source_code/**/best_model*
 source_code/**/latest_model*
+Data/
