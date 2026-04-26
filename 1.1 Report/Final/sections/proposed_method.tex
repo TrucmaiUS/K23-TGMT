@@ -4,13 +4,10 @@
 
 Nghiên cứu xây dựng các biến thể cải tiến trên nền tảng
 \textbf{TransReID}~\cite{he2021transreidtransformerbasedobjectreidentification}.
-Khác với các thử nghiệm ban đầu can thiệp trực tiếp vào đặc trưng toàn cục,
-phiên bản hiện tại giữ nguyên vai trò trung tâm của global branch và JPM branch
-của TransReID. Các thành phần mới chỉ được đưa vào như tín hiệu giám sát phụ
-hoặc hiệu chỉnh cục bộ có hệ số nhỏ. Thiết kế này xuất phát từ quan sát thực
-nghiệm rằng global branch của TransReID đã học được biểu diễn nhận dạng rất
-mạnh; nếu thay thế hoặc trộn mạnh đặc trưng global bằng một nhánh phụ nhiễu,
-hiệu năng validation dễ suy giảm.
+Phiên bản hiện tại giữ nguyên vai trò trung tâm của global branch và JPM branch
+của TransReID. Các thành phần mới được đưa vào như tín hiệu giám sát phụ hoặc
+hiệu chỉnh cục bộ có hệ số nhỏ, nhằm bổ sung thông tin cho biểu diễn token mà
+không làm thay đổi pipeline truy hồi chính.
 
 Ba biến thể được khảo sát gồm: \textbf{semantic alignment}, \textbf{local
 reliability}, và \textbf{semantic alignment kết hợp local reliability}. Các
@@ -44,7 +41,8 @@ bằng và hạn chế nhiễu từ thay đổi kiến trúc nền.
 
 \subsection{Semantic alignment}
 
-Biến thể semantic alignment lấy cảm hứng từ DSA-ReID
+Biến thể semantic alignment lấy cảm hứng từ Densely Semantically Aligned
+Person Re-Identification
 \cite{zhang2019denselysemanticallyalignedperson}, nhưng được điều chỉnh để phù
 hợp với không gian token của Transformer. Thay vì xây dựng một semantic guiding
 stream riêng, phương pháp chỉ dùng semantic mask như tín hiệu giám sát phụ

@@ -10,13 +10,13 @@
 Các kết quả được báo cáo trên benchmark \textbf{Market-1501}
 \cite{zheng2015market1501} theo giao thức query--gallery chuẩn của Person
 ReID. Hiệu năng truy hồi được đo bằng mean Average Precision (mAP) và Cumulative
-Matching Characteristics (CMC) tại Rank-1, Rank-5 và Rank-10. Bên cạnh độ chính xác,
-báo cáo thêm độ trễ suy luận để đánh giá chi phí triển khai của từng biến thể.
+Matching Characteristics (CMC) tại Rank-1, Rank-5 và Rank-10. Ngoài ra, độ trễ
+suy luận được đo để so sánh tốc độ inference giữa các biến thể.
 
 \subsection{Các phương pháp so sánh}
 
 Thực nghiệm so sánh bốn mô hình: TransReID baseline, TransReID với semantic
 alignment, TransReID với local reliability, và bản kết hợp semantic alignment
 với local reliability. Tất cả mô hình dùng cùng backbone TransReID stride với
-JPM và SIE camera; khác biệt giữa các cấu hình chỉ nằm ở các thành phần phụ trợ
-được mô tả trong Mục~\ref{sec:proposed_method}.
+JPM và SIE camera. Các cấu hình chỉ khác nhau ở cơ chế semantic alignment và
+local reliability được mô tả trong Mục~\ref{sec:proposed_method}.
