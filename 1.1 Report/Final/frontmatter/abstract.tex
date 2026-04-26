@@ -1,9 +1,13 @@
 % !TeX root = ../main.tex
 Bài báo tập trung nghiên cứu bài toán \textit{Person Re-identification} (ReID)
-trong lĩnh vực thị giác máy tính, với mục tiêu nhận dạng lại một người qua
-nhiều camera khác nhau. Trên cơ sở khảo sát các nghiên cứu liên quan, đề tài
-hướng đến việc đề xuất một mô hình dựa trên học sâu, thực nghiệm trên tập dữ
-liệu chuẩn và đánh giá hiệu quả bằng các độ đo phổ biến. Bên cạnh đó, nghiên
-cứu cũng xem xét một số hướng cải tiến nhằm nâng cao hiệu quả nhận dạng trong
-những bối cảnh có thay đổi lớn về góc nhìn, ánh sáng, tư thế và hiện tượng che
-khuất. Repo: \url{https://github.com/TrucmaiUS/K23-TGMT}
+trên nền tảng TransReID, với mục tiêu cải thiện chất lượng truy hồi trong các
+bối cảnh có thay đổi lớn về góc nhìn, tư thế và che khuất. Nghiên cứu đề xuất
+hai hướng bổ sung ở mức patch token: semantic alignment dựa trên human parsing
+và local reliability để đánh giá độ tin cậy của token cục bộ. Semantic
+alignment được dùng như tín hiệu giám sát trong huấn luyện, không cần semantic
+mask ở pha suy luận; local reliability chỉ hiệu chỉnh đặc trưng với hệ số nhỏ
+để bảo toàn vai trò của global branch. Trong thiết lập so sánh công bằng từ
+khởi tạo ImageNet trên Market-1501, bản kết hợp semantic alignment và local
+reliability đạt $90.1\%$ mAP và $95.4\%$ Rank-1, cao hơn baseline TransReID lần
+lượt $0.9$ và $0.3$ điểm phần trăm, với độ trễ tăng khoảng $3.4\%$. Repo:
+\url{https://github.com/TrucmaiUS/K23-TGMT}

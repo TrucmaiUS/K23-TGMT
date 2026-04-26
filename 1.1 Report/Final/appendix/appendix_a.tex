@@ -2,50 +2,82 @@
 \section{Cấu hình thực nghiệm chi tiết}
 \label{sec:appendix_experimental_config}
 
-\subsection{Thiết lập cài đặt chung}
-Trừ khi có ghi chú khác, các thực nghiệm đều sử dụng backbone
-\texttt{vit\_base\_patch16\_224\_TransReID} với cấu hình stride
-\texttt{[12,12]}, \texttt{JPM=True} và \texttt{SIE\_CAMERA=True}. Kích thước
-ảnh đầu vào cho cả huấn luyện và đánh giá là $256 \times 128$. Các thiết lập
-huấn luyện chung xuất hiện ổn định trong các lần huấn luyện chính gồm:
-optimizer \textbf{SGD}, batch size toàn cục $64$, \texttt{NUM\_INSTANCE=4},
-weight decay $10^{-4}$, random horizontal flip với xác suất $0.5$, random
-erasing với xác suất $0.5$, warm-up tuyến tính trong $10$ epoch và đánh giá
-định kỳ sau mỗi $20$ epoch.
+\subsection{Bộ dữ liệu và chuẩn bị semantic mask}
 
-Ở pha suy luận, các mô hình được đánh giá với \texttt{FEAT\_NORM=yes} và đặc
-trưng trước neck. Riêng các cấu hình sử dụng cơ chế hợp nhất tại JPM hoặc hiệu
-chỉnh residual vẫn giữ nguyên pipeline truy hồi của TransReID, chỉ thay đổi
-cách hình thành đặc trưng đầu ra từ thông tin patch-level.
+Nhóm thực nghiệm chính được lấy từ artifact
+\path{transreid_report_artifacts_20260425_192134}. Các kết quả định lượng được
+báo cáo trên Market-1501 \cite{zheng2015market1501}. Bộ dữ liệu gồm
+$12{,}936$ ảnh huấn luyện của $751$ định danh, $3{,}368$ ảnh truy vấn thuộc
+$750$ định danh và $15{,}913$ ảnh gallery thuộc $751$ định danh, được thu thập
+từ $6$ camera.
 
-\subsection{Thiết lập dữ liệu và cấu hình của biến thể OVTF}
-Thực nghiệm được thực hiện trên bộ dữ liệu Market-1501
-\cite{zheng2015market1501}. Theo định nghĩa dataset trong nhánh
-\texttt{train}, bộ dữ liệu được chia theo chuẩn gồm $12{,}936$ ảnh huấn luyện
-cho $751$ định danh, $3{,}368$ ảnh query và $15{,}913$ ảnh gallery.
+Đối với các cấu hình bật semantic alignment, semantic mask được sinh offline
+bằng human parsing và lưu trong thư mục \path{semantic_groups}. Mask được đưa
+qua cùng các phép biến đổi hình học với ảnh đầu vào, sau đó được resize về lưới
+patch để tạo nhãn semantic patch-level. Baseline TransReID và local reliability
+không yêu cầu semantic mask.
 
-Để làm rõ mức cải thiện, phần này sử dụng hai cấu hình tại cùng mốc
-\textbf{epoch 120}:
-\begin{itemize}
-    \item \textbf{Baseline TransReID gốc}: giữ nguyên cấu hình TransReID stride
-    trên Market-1501 với \texttt{vit\_base\_patch16\_224\_TransReID},
-    \texttt{STRIDE\_SIZE=[12,12]}, \texttt{SIE\_CAMERA=True},
-    \texttt{JPM=True}, đồng thời tắt toàn bộ các thành phần bổ sung gồm
-    \texttt{VIS\_WEIGHT}, \texttt{TOKEN\_ENRICH}, \texttt{OCC\_AUG} và
-    \texttt{LOCAL\_GROUP}.
-    \item \textbf{Biến thể OVTF}: giữ nguyên backbone TransReID stride và bật
-    \texttt{VIS\_WEIGHT}, \texttt{TOKEN\_ENRICH} và \texttt{OCC\_AUG}, trong khi
-    \texttt{LOCAL\_GROUP} được lược bỏ.
-\end{itemize}
+\subsection{Các cấu hình được so sánh}
 
-Ở pha suy luận, hệ thống sử dụng \texttt{USE\_JPM\_FUSION=True}, nghĩa là đặc
-trưng truy hồi cuối cùng được ghép từ nhánh toàn cục và bốn nhánh cục bộ JPM.
+\begin{table*}[!t]
+\centering
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{3.8cm}L{5.4cm}L{6.4cm}@{}}
+\toprule
+\textbf{Tên cấu hình} & \textbf{File cấu hình} & \textbf{Thành phần chính} \\
+\midrule
+Baseline TransReID & \path{vit_transreid_stride_fair.yml} & TransReID stride với JPM và SIE camera, không bật nhánh phụ. \\
+Semantic alignment & \path{vit_transreid_stride_sem_align.yml} & Bật semantic patch head và patch-level semantic cross-entropy. \\
+Local reliability & \path{vit_transreid_stride_local_reliability.yml} & Bật reliability head, synthetic local occlusion, visibility loss và consistency loss. \\
+Semantic alignment + local reliability & \path{vit_transreid_stride_sem_align_reliability.yml} & Kết hợp semantic supervision với reliability-guided local correction. \\
+\bottomrule
+\end{tabular}
+\caption{File cấu hình và thành phần chính của các mô hình được so sánh.}
+\label{tab:appendix_configs}
+\end{table*}
 
-Siêu tham số cho huấn luyện:
-\begin{itemize}
-    \item optimizer SGD, learning rate ban đầu $0.008$.
-    \item batch size $64$, với \texttt{NUM\_INSTANCE=4}.
-    \item weight decay $10^{-4}$.
-    \item random horizontal flip với xác suất $0.5$.
-    \item random erasing với xác suất $0.5$.
-\end{itemize}
+\subsection{Thiết lập huấn luyện chung}
+
+Tất cả cấu hình đều sử dụng backbone
+\texttt{vit\_base\_patch16\_224\_TransReID}, stride \texttt{[12,12]},
+\texttt{SIE\_CAMERA=True}, \texttt{JPM=True}, \texttt{RE\_ARRANGE=True}. Trọng
+số khởi tạo là ImageNet checkpoint \path{jx_vit_base_p16_224-80ecf9dd.pth}.
+Kích thước ảnh đầu vào cho huấn luyện và đánh giá là \(256 \times 128\).
+
+Các siêu tham số huấn luyện chung gồm optimizer SGD, batch size $64$, learning
+rate $0.008$, weight decay $10^{-4}$, \texttt{NUM\_INSTANCE=4},
+\texttt{NUM\_WORKERS=8}, $120$ epoch, \texttt{CHECKPOINT\_PERIOD=5} và
+\texttt{EVAL\_PERIOD=10}. Checkpoint dùng để báo cáo kết quả là
+\texttt{transformer\_best.pth} của từng cấu hình.
+
+\subsection{Thiết lập semantic alignment}
+
+Semantic alignment sử dụng \texttt{SEM\_ALIGN.ENABLED=True},
+\texttt{NUM\_PARTS=6}, \texttt{MASK\_DIR=semantic\_groups},
+\texttt{LAMBDA\_PATCH=0.2}, \texttt{WARMUP\_EPOCHS=20},
+\texttt{FUSE\_GLOBAL=False} và \texttt{DETACH\_REFERENCE=True}. Các thành phần
+align, separation và batch prototype loss được tắt trong cấu hình báo cáo để
+giữ semantic branch ở vai trò regularizer nhẹ.
+
+\subsection{Thiết lập local reliability}
+
+Local reliability sử dụng \texttt{RELIABILITY\_PIPELINE=True},
+\texttt{REL\_HIDDEN\_DIM=256}, \texttt{REL\_FUSION\_ALPHA=0.05},
+\texttt{REL\_GATE\_INIT=-4.0}, \texttt{REL\_VIS\_LOSS\_WEIGHT=0.10},
+\texttt{REL\_CONSIST\_LOSS\_WEIGHT=0.10},
+\texttt{REL\_METRIC\_LOSS\_WEIGHT=0.00} và
+\texttt{REL\_REG\_WEIGHT=0.0}. Synthetic occlusion dùng xác suất $1.0$, vùng
+che khuất có diện tích từ $0.10$ đến $0.28$ ảnh.
+
+\subsection{Thiết lập bản kết hợp}
+
+Bản kết hợp bật đồng thời semantic alignment và local reliability với các tham
+số nêu trên. Pixel decoder được tắt trong cấu hình báo cáo để tập trung so
+sánh semantic token supervision và reliability-guided local correction.
+
+\subsection{Đo độ trễ}
+
+Độ trễ suy luận được đo trên GPU với batch size $1$, $30$ vòng warm-up, $100$
+vòng đo và không dùng AMP. Số liệu được báo cáo bằng thời gian trung bình trên
+một ảnh và FPS tương ứng.

@@ -2,164 +2,132 @@
 \section{Phương pháp đề xuất}
 \label{sec:proposed_method}
 
-Nghiên cứu xây dựng một họ phương pháp dựa trên
-\textbf{TransReID}~\cite{he2021transreidtransformerbasedobjectreidentification}
-với mục tiêu khai thác thông tin nhìn thấy ở mức patch nhằm cải thiện chất
-lượng biểu diễn cho bài toán Person ReID. Giả thuyết là không phải mọi patch đều đóng góp như nhau vào đặc trưng cuối
-cùng: các patch chứa vùng người ổn định, ít bị che khuất và giàu thông tin
-nhận dạng cần được ưu tiên hơn so với các patch nền hoặc patch nhiễu. Trên cơ
-sở đó, nghiên cứu bổ sung vào pipeline của TransReID một nhánh dự đoán trọng số
-nhìn thấy cho từng patch, sau đó khảo sát nhiều chiến lược tích hợp khác nhau,
-từ thay thế trực tiếp, hợp nhất tuyến tính cho đến hiệu chỉnh residual có kiểm
-soát.
+Nghiên cứu xây dựng các biến thể cải tiến trên nền tảng
+\textbf{TransReID}~\cite{he2021transreidtransformerbasedobjectreidentification}.
+Khác với các thử nghiệm ban đầu can thiệp trực tiếp vào đặc trưng toàn cục,
+phiên bản hiện tại giữ nguyên vai trò trung tâm của global branch và JPM branch
+của TransReID. Các thành phần mới chỉ được đưa vào như tín hiệu giám sát phụ
+hoặc hiệu chỉnh cục bộ có hệ số nhỏ. Thiết kế này xuất phát từ quan sát thực
+nghiệm rằng global branch của TransReID đã học được biểu diễn nhận dạng rất
+mạnh; nếu thay thế hoặc trộn mạnh đặc trưng global bằng một nhánh phụ nhiễu,
+hiệu năng validation dễ suy giảm.
 
-\subsection{Tổng quan kiến trúc}
-
-Ảnh đầu vào trước hết được chia thành các patch và được đưa qua backbone
-Transformer của TransReID để thu được tập patch embeddings cùng đặc trưng toàn
-cục. Trên không gian đặc trưng này, một nhánh phụ được thêm vào nhằm ước lượng
-mức độ hữu ích của từng patch đối với nhiệm vụ truy hồi. Các trọng số thu được
-không thay đổi backbone gốc, mà được sử dụng để xây dựng một đặc trưng phụ trợ
-phản ánh phần thông tin nhìn thấy đáng tin cậy hơn. Tùy theo từng biến thể thực
-nghiệm, đặc trưng phụ trợ này sẽ được sử dụng theo các cách khác nhau để hình
-thành đặc trưng truy hồi cuối cùng.
-
-Hình~\ref{fig:two_pipelines} minh họa đồng thời pipeline baseline và pipeline
-mở rộng để làm rõ vị trí của nhánh \textit{visibility-guided patch weighting}
-trong kiến trúc tổng thể.
+Ba biến thể được khảo sát gồm: \textbf{semantic alignment}, \textbf{local
+reliability}, và \textbf{semantic alignment kết hợp local reliability}. Các
+kiến trúc tương ứng được trình bày trong
+Hình~\ref{fig:arch_combined_semantic_reliability}.
 
 \begin{figure*}[!t]
     \centering
-    \begin{minipage}[t]{0.48\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{figures/pipeline.png}
-
-        \vspace{2pt}
-        \small (a) Pipeline baseline
-    \end{minipage}
-    \hfill
-    \begin{minipage}[t]{0.48\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{figures/new_pipeline.png}
-
-        \vspace{2pt}
-        \small (b) Pipeline đề xuất với visibility-guided patch weighting
-    \end{minipage}
-    \caption{So sánh giữa pipeline TransReID gốc và pipeline mở rộng với nhánh
-    ước lượng trọng số theo patch.}
-    \label{fig:two_pipelines}
+    \includegraphics[width=\linewidth,height=0.42\textheight,keepaspectratio]{figures/arch_combined_semantic_reliability.png}
+    \caption{Kiến trúc tổng hợp của các biến thể cải tiến trên TransReID.}
+    \label{fig:arch_combined_semantic_reliability}
 \end{figure*}
 
-\subsection{Mô hình hóa trọng số nhìn thấy ở mức patch}
+\subsection{Baseline TransReID}
 
-Ký hiệu \(Z=[z_1,z_2,\dots,z_N]\), với \(z_i \in \mathbb{R}^{d}\), là tập patch
-embeddings được trích xuất từ backbone. Để lượng hóa tầm quan trọng của từng
-patch, nghiên cứu bổ sung một đầu dự đoán nhẹ dưới dạng MLP, cho đầu ra là
-trọng số nhìn thấy \(w_i\):
+Với ảnh đầu vào \(x\), TransReID chia ảnh thành các patch và đưa chuỗi token qua
+backbone Transformer. Gọi \(Z=[z_1,z_2,\dots,z_N]\), \(z_i \in \mathbb{R}^d\),
+là tập patch token sau backbone. Nhánh toàn cục sử dụng CLS token để tạo đặc
+trưng \(f_g\), trong khi JPM branch thực hiện shuffle và chia nhóm patch token
+để tạo các đặc trưng cục bộ. Đặc trưng truy hồi cuối cùng được xây dựng từ
+global branch và JPM branch theo pipeline gốc của TransReID.
+
+Hàm mất mát baseline gồm ID classification loss và triplet loss:
 \[
-w_i = \sigma(\mathrm{MLP}(z_i)),
+\mathcal{L}_{base}
+= \mathcal{L}_{ID}^{JPM}
++ \mathcal{L}_{tri}^{JPM}.
 \]
-trong đó \(\sigma(\cdot)\) là hàm sigmoid. Trọng số lớn hơn tương ứng với patch
-được xem là chứa nhiều thông tin hữu ích hơn cho nhận dạng.
+Tất cả các biến thể cải tiến đều kế thừa pipeline này để bảo đảm so sánh công
+bằng và hạn chế nhiễu từ thay đổi kiến trúc nền.
 
-Từ các trọng số này, một đặc trưng phụ trợ dựa trên patch được xây dựng thông
-qua phép tổng hợp có trọng số:
+\subsection{Semantic alignment}
+
+Biến thể semantic alignment lấy cảm hứng từ DSA-ReID
+\cite{zhang2019denselysemanticallyalignedperson}, nhưng được điều chỉnh để phù
+hợp với không gian token của Transformer. Thay vì xây dựng một semantic guiding
+stream riêng, phương pháp chỉ dùng semantic mask như tín hiệu giám sát phụ
+trong huấn luyện. Mục tiêu là ép patch token giữ được thông tin tương ứng với
+vùng cơ thể mà patch đó quan sát, trong khi đặc trưng truy hồi chính vẫn đến từ
+TransReID.
+
+Trước huấn luyện, mỗi ảnh được xử lý bởi mô hình human parsing để tạo semantic
+mask offline. Các nhãn parsing được gộp thành \(K=6\) nhóm semantic ổn định,
+sau đó được đưa qua cùng các phép biến đổi hình học với ảnh đầu vào. Mask sau
+biến đổi được resize về lưới patch của Transformer để tạo nhãn semantic
+\(y_i^{sem}\) cho từng patch token \(z_i\). Một projection head nhẹ
+\(h_{sem}\) dự đoán phân phối semantic của patch:
 \[
-f_{\mathrm{vis}} = \frac{\sum_{i=1}^{N} w_i z_i}{\sum_{i=1}^{N} w_i + \epsilon},
+p_i^{sem} = h_{sem}(z_i).
 \]
-trong đó \(\epsilon\) là hằng số nhỏ nhằm tránh chia cho \(0\). Cách biểu diễn
-này cho phép mô hình tập trung mạnh hơn vào các vùng đáng tin cậy, đồng thời
-giảm ảnh hưởng của các patch bị che khuất hoặc chứa nền.
-
-\subsection{Các chiến lược tích hợp đặc trưng}
-
-Thay vì giả định duy nhất một cách kết hợp giữa đặc trưng toàn cục gốc và đặc
-trưng phụ trợ theo patch, nghiên cứu khảo sát một họ chiến lược tích hợp. Trong
-biến thể hợp nhất tuyến tính, đặc trưng cuối cùng được xác định bởi
+Loss semantic được tính bằng cross-entropy trên các patch hợp lệ:
 \[
-f_{\mathrm{final}} = \alpha f_{\mathrm{global}} + (1-\alpha) f_{\mathrm{vis}},
+\mathcal{L}_{sem}
+= \lambda_{patch}
+\frac{1}{|\Omega|}
+\sum_{i \in \Omega}
+\operatorname{CE}\bigl(p_i^{sem}, y_i^{sem}\bigr),
 \]
-với \(f_{\mathrm{global}}\) là đặc trưng toàn cục của TransReID và
-\(\alpha \in [0,1]\) là hệ số điều khiển mức đóng góp của nhánh mới. Thiết kế
-này cho phép bảo toàn lợi thế của biểu diễn global gốc mà vẫn khai thác
-thông tin từ các patch có độ tin cậy cao.
+trong đó \(\Omega\) là tập patch có nhãn semantic hợp lệ và
+\(\lambda_{patch}\) điều khiển mức đóng góp của nhánh phụ. Trong cấu hình báo
+cáo, \(\lambda_{patch}=0.2\) và semantic loss được warm-up trong $20$ epoch.
+Đáng chú ý, semantic head chỉ phục vụ huấn luyện; ở pha suy luận mô hình không
+cần semantic mask và không dùng semantic logits làm đầu vào truy hồi.
 
-Đối với các cấu hình được huấn luyện từ khởi tạo ImageNet, nghiên cứu còn khảo
-sát một dạng tích hợp bảo thủ hơn dưới dạng hiệu chỉnh residual:
+\subsection{Local reliability}
+
+Biến thể local reliability tập trung vào độ tin cậy của token cục bộ. Với mỗi
+patch token \(z_i\), một head nhẹ dự đoán hệ số tin cậy:
+
 \[
-f_{\mathrm{final}} = f_{\mathrm{global}} + \gamma \cdot
-\bigl(f_{\mathrm{vis}} - f_{\mathrm{global}}\bigr),
+r_i = \sigma(h_{rel}(z_i)),
 \]
-trong đó \(\gamma\) là hệ số cổng học được. Cơ chế này bảo đảm nhánh mới chỉ
-điều chỉnh biểu diễn gốc một cách từ từ, nhờ đó làm quá trình tối ưu ổn định
-hơn khi mô hình chưa mang sẵn tri thức ReID chuyên biệt.
-
-Ngoài hai chiến lược chính nêu trên, các thực nghiệm cũng khảo sát những biến
-thể khác như áp dụng weighting trên các nhánh local của JPM, lọc
-\textit{foreground-aware top-k patches}, hoặc mở rộng pipeline bằng \textit{token enrichment} và
-\textit{synthetic occlusion augmentation}. Các biến thể này không thay đổi giả thuyết cơ
-sở của phương pháp, mà đóng vai trò khảo sát mức độ phù hợp của từng cách tích
-hợp trong những điều kiện khởi tạo khác nhau.
-
-\subsection{Hợp nhất token theo độ quan sát có xét che khuất (OVTF)}
-
-Trong nhóm cấu hình được huấn luyện từ khởi tạo ImageNet, nghiên cứu lựa chọn
-một biến thể \textbf{Occlusion-aware Visibility-guided Token Fusion}
-(OVTF), nhằm kết hợp cơ chế
-gán trọng số theo độ quan sát với các thành phần tăng cường biểu diễn và tăng
-độ bền vững trước che khuất. OVTF vẫn giữ backbone TransReID kết hợp JPM, đồng
-thời kết hợp bốn thành phần bổ trợ theo một pipeline thống nhất. Trước hết,
-\textbf{visibility-guided patch weighting} gán cho mỗi patch token một trọng số
-nhìn thấy thông qua một đầu dự đoán nhẹ nhằm lượng hóa mức độ hữu ích của vùng
-đó đối với truy hồi. Trên cơ sở các trọng số này, cơ chế
-\textbf{dynamic top-k token enrichment} chọn ra nhóm patch có độ tin cậy cao
-nhất để xây dựng một \textit{visible prototype}, rồi sử dụng prototype đó để
-tăng cường trở lại cho toàn bộ patch token trước khi tổng hợp đặc trưng. Ở pha
-suy luận, \textbf{JPM fusion} ghép đặc trưng từ nhánh toàn cục với bốn nhánh cục
-bộ của JPM nhằm đồng thời duy trì thông tin toàn cục và chi tiết vùng. Cuối
-cùng, \textbf{synthetic occlusion augmentation} bổ sung các mẫu che khuất tổng
-hợp trong quá trình huấn luyện để tăng độ bền vững của mô hình trong điều kiện che khuất
-và hỗ trợ duy trì tính nhất quán của biểu diễn đặc trưng.
-
-Gọi \(\mathrm{TopK}\) là tập các patch có trọng số cao nhất, prototype được
-xây dựng như sau:
+trong đó \(r_i \in (0,1)\). Các hệ số này được dùng để tạo một hiệu chỉnh cục
+bộ có trọng số từ patch token. Thay vì thay thế đặc trưng global, hiệu chỉnh
+này chỉ được trộn vào đặc trưng truy hồi với hệ số nhỏ:
 \[
-p = \sum_{i \in \mathrm{TopK}} \alpha_i z_i,
-\qquad
-\alpha_i = \frac{\exp(w_i)}{\sum_{j \in \mathrm{TopK}} \exp(w_j)}.
+f_{rel}
+= f_{base} + \alpha_{rel}\,\Delta f_{rel},
 \]
-Prototype này sau đó được dùng để tăng cường trở lại cho patch embeddings:
-\[
-\tilde{z}_i = z_i + \lambda w_i p.
-\]
-Từ các patch đã được tăng cường, đặc trưng phụ trợ mới được tổng hợp bởi
-\[
-f_{\mathrm{aug}} = \frac{\sum_i w_i \tilde{z}_i}{\sum_i w_i + \epsilon}.
-\]
-Thiết kế trên cho phép nhánh patch-level không chỉ làm nhiệm vụ đánh trọng số,
-mà còn lan truyền thông tin từ các vùng có độ tin cậy cao đến toàn bộ biểu
-diễn. Trong pha suy luận, \(f_{\mathrm{aug}}\) được sử dụng cùng nhánh toàn cục
-và các nhánh cục bộ JPM để hình thành đặc trưng truy hồi cuối cùng.
+với \(f_{base}\) là đặc trưng từ TransReID/JPM, \(\Delta f_{rel}\) là hiệu
+chỉnh cục bộ sinh từ các token có độ tin cậy cao, và
+\(\alpha_{rel}=0.05\). Gate của nhánh reliability được khởi tạo ở giá trị
+\(-4.0\), khiến ảnh hưởng ban đầu của nhánh phụ rất nhỏ. Cách khởi tạo này làm
+quá trình tối ưu ổn định hơn vì global branch vẫn chi phối biểu diễn ở giai
+đoạn đầu.
 
-Về tối ưu hóa, OVTF kế thừa cơ chế \textit{softmax + soft triplet} của
-TransReID trên nhánh toàn cục và các nhánh JPM. Để tránh phân phối trọng số
-theo patch bị suy biến, hàm mục tiêu được bổ sung một thành phần điều chuẩn
-\(\mathcal{L}_{reg}\). Khi áp dụng tăng cường che khuất tổng hợp, hàm mục tiêu
-tiếp tục được mở rộng bởi hai thành phần \(\mathcal{L}_{occ}\) và
-\(\mathcal{L}_{cons}\), tương ứng dùng để tăng khả năng nhận dạng trên các mẫu
-bị che khuất và ràng buộc tính nhất quán giữa ảnh gốc với ảnh che khuất tổng
-hợp. Khi đó, hàm mất mát tổng quát có thể được viết dưới dạng:
+Để học reliability, quá trình huấn luyện sử dụng các cặp ảnh gốc và ảnh bị che
+khuất tổng hợp. Nhánh reliability được ràng buộc bởi visibility loss và
+consistency loss:
+\[
+\mathcal{L}_{rel}
+= \lambda_{vis}\mathcal{L}_{vis}
++ \lambda_{cons}\mathcal{L}_{cons}.
+\]
+Trong cấu hình báo cáo, \(\lambda_{vis}=0.10\),
+\(\lambda_{cons}=0.10\), metric loss phụ được tắt và regularization weight đặt
+bằng $0$. Như vậy, local reliability đóng vai trò hiệu chỉnh bảo thủ thay vì
+một nhánh truy hồi cạnh tranh với global branch.
+
+\subsection{Kết hợp semantic alignment và local reliability}
+
+Biến thể kết hợp sử dụng cùng backbone TransReID và đồng thời kích hoạt hai cơ
+chế phụ trợ nêu trên. Semantic alignment cung cấp ràng buộc part-level ở không
+gian patch token trong huấn luyện, còn local reliability học cách đánh giá token
+cục bộ đáng tin cậy và hiệu chỉnh đặc trưng truy hồi với hệ số nhỏ. Hai thành
+phần này bổ sung cho nhau: semantic supervision giúp token giữ cấu trúc cơ thể
+rõ hơn, trong khi reliability fusion giúp giảm ảnh hưởng của vùng nhiễu hoặc
+che khuất trong đặc trưng cuối.
+
+Hàm mất mát tổng quát của bản kết hợp là:
 \[
 \mathcal{L}
-= \mathcal{L}_{ID}^{JPM}
-+ \mathcal{L}_{tri}^{JPM}
-+ \lambda_{\mathrm{reg}}\mathcal{L}_{reg}
-+ \lambda_{\mathrm{occ}}\mathcal{L}_{occ}
-+ \lambda_{\mathrm{cons}}\mathcal{L}_{cons}.
+= \mathcal{L}_{base}
++ \mathcal{L}_{sem}
++ \mathcal{L}_{rel}.
 \]
-Trong đó, \(\mathcal{L}_{reg}\) giúp phân phối trọng số nhìn thấy giữ được tính
-phân biệt, \(\mathcal{L}_{occ}\) tăng khả năng nhận dạng khi một phần cơ thể bị
-che khuất, còn \(\mathcal{L}_{cons}\) ép biểu diễn của cặp (ảnh gốc, ảnh bị
-che) không lệch nhau quá xa trong không gian đặc trưng. Các siêu tham
-số chi tiết của cấu hình OVTF được trình bày tại
-Phụ lục~\ref{sec:appendix_experimental_config}.
+Ở pha suy luận, semantic mask không còn được sử dụng. Đường suy luận chỉ gồm
+backbone TransReID, JPM branch và nhánh reliability đã học. Do đó, chi phí suy
+luận của semantic alignment đơn lẻ gần như không đổi so với baseline, còn bản
+kết hợp chỉ tăng thêm chi phí của reliability head nhẹ.
