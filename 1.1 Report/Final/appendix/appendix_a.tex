@@ -9,11 +9,11 @@ Các kết quả định lượng trong báo cáo được đánh giá trên Mar
 $751$ định danh, $3{,}368$ ảnh truy vấn thuộc $750$ định danh và $15{,}913$
 ảnh gallery thuộc $751$ định danh, được thu thập từ $6$ camera.
 
-\begin{table}[!h]
+\begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.12}
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}L{2.7cm}L{5.0cm}@{}}
+\begin{tabular}{@{}L{3.0cm}L{5.0cm}@{}}
 \toprule
 \textbf{Hạng mục} & \textbf{Thiết lập} \\
 \midrule
@@ -21,8 +21,7 @@ Bộ dữ liệu & Market-1501 \\
 Train / query / gallery & $12{,}936$ / $3{,}368$ / $15{,}913$ ảnh \\
 Số định danh huấn luyện & $751$ \\
 Số camera & $6$ \\
-GPU huấn luyện & NVIDIA RTX PRO 6000 Blackwell \\
-GPU đo độ trễ & NVIDIA RTX PRO 6000 Blackwell \\
+GPU & NVIDIA RTX PRO 6000 Blackwell \\
 \bottomrule
 \end{tabular}
 \caption{Bộ dữ liệu và phần cứng sử dụng trong thực nghiệm.}
@@ -36,27 +35,28 @@ Baseline TransReID và local reliability không yêu cầu semantic mask.
 
 \subsection{Các cấu hình được so sánh}
 
-\begin{table*}[!t]
+\begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.12}
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}L{3.8cm}L{5.2cm}L{6.6cm}@{}}
+\setlength{\tabcolsep}{3pt}
+\footnotesize
+\begin{tabular}{@{}L{2.8cm}L{5.0cm}@{}}
 \toprule
-\textbf{Phương pháp} & \textbf{File cấu hình} & \textbf{Mô tả} \\
+\textbf{Phương pháp} & \textbf{Mô tả cấu hình} \\
 \midrule
-Baseline TransReID & \path{vit_transreid_stride_fair.yml} & TransReID stride với JPM và SIE camera. \\
-Semantic alignment & \path{vit_transreid_stride_sem_align.yml} & Thêm giám sát semantic ở mức patch token trong huấn luyện. \\
-Local reliability & \path{vit_transreid_stride_local_reliability.yml} & Học độ tin cậy token cục bộ bằng ảnh che khuất tổng hợp và dùng residual yếu ở pha suy luận. \\
-Semantic alignment + local reliability & \path{vit_transreid_stride_sem_align_reliability.yml} & Kết hợp giám sát semantic trong huấn luyện với hiệu chỉnh local reliability khi suy luận. \\
+Baseline TransReID & TransReID stride với JPM và SIE camera. \\
+Semantic alignment & Thêm giám sát semantic ở mức patch token trong huấn luyện. \\
+Local reliability & Học độ tin cậy token cục bộ bằng ảnh che khuất tổng hợp và dùng residual yếu ở pha suy luận. \\
+Semantic alignment + local reliability & Kết hợp giám sát semantic trong huấn luyện với hiệu chỉnh local reliability khi suy luận. \\
 \bottomrule
 \end{tabular}
 \caption{Các phương pháp được so sánh trong thực nghiệm chính.}
 \label{tab:appendix_configs}
-\end{table*}
+\end{table}
 
 \subsection{Thiết lập huấn luyện chung}
 
-\begin{table}[!h]
+\begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.12}
 \setlength{\tabcolsep}{4pt}
@@ -76,8 +76,7 @@ Batch size & $64$ \\
 Learning rate & $0.008$ \\
 Weight decay & $10^{-4}$ \\
 Sampler & Softmax-triplet, $4$ ảnh mỗi định danh \\
-Chu kỳ đánh giá & Mỗi $10$ epoch \\
-Checkpoint báo cáo & Checkpoint có validation mAP tốt nhất \\
+Checkpoint & Checkpoint có validation mAP tốt nhất \\
 \bottomrule
 \end{tabular}
 \caption{Thiết lập huấn luyện chung cho toàn bộ cấu hình.}
@@ -86,29 +85,30 @@ Checkpoint báo cáo & Checkpoint có validation mAP tốt nhất \\
 
 \subsection{Thiết lập riêng của từng cải tiến}
 
-\begin{table*}[!t]
+\begin{table}[H]
 \centering
-\renewcommand{\arraystretch}{1.12}
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}L{3.4cm}L{5.4cm}L{6.8cm}@{}}
+\renewcommand{\arraystretch}{1.10}
+\setlength{\tabcolsep}{3pt}
+\footnotesize
+\begin{tabular}{@{}L{2.4cm}L{5.4cm}@{}}
 \toprule
-\textbf{Nhóm} & \textbf{Thiết lập} & \textbf{Mục đích} \\
+\textbf{Nhóm} & \textbf{Thiết lập chính và mục đích} \\
 \midrule
-Semantic alignment & $6$ nhóm semantic từ human parsing; patch-level cross-entropy với trọng số $0.2$; warm-up $20$ epoch & Buộc patch token giữ thông tin part-level mà không đưa semantic mask vào descriptor suy luận. \\
-Semantic alignment & Không trộn semantic logits vào global descriptor; semantic reference được tách gradient & Giữ semantic branch ở vai trò regularizer trong huấn luyện. \\
-Local reliability & Reliability head ẩn $256$ chiều; residual fusion với hệ số $0.05$; gate khởi tạo âm mạnh & Cho phép nhánh reliability hiệu chỉnh descriptor ở mức nhỏ và ổn định. \\
-Local reliability & Visibility loss và consistency loss cùng trọng số $0.10$; không dùng metric loss phụ và regularization phụ & Tập trung học độ tin cậy token từ tín hiệu che khuất thay vì tạo thêm mục tiêu truy hồi cạnh tranh. \\
-Local reliability & Synthetic occlusion luôn bật; vùng che chiếm khoảng $10\%$--$28\%$ diện tích ảnh & Tạo tín hiệu giám sát visibility cho token cục bộ. \\
-Phiên bản kết hợp & Bật đồng thời semantic alignment và local reliability; pixel decoder không dùng trong cấu hình báo cáo & So sánh tác động bổ sung của hai tín hiệu semantic và reliability trong cùng backbone. \\
+Semantic alignment & Dùng $6$ nhóm semantic từ human parsing và patch-level cross-entropy với trọng số $0.2$, warm-up $20$ epoch. Mục tiêu là buộc patch token giữ thông tin part-level mà không đưa semantic mask vào descriptor suy luận. \\
+Semantic alignment & Không trộn semantic logits vào global descriptor và tách gradient semantic reference. Thiết lập này giữ semantic branch ở vai trò regularizer trong huấn luyện. \\
+Local reliability & Dùng reliability head ẩn $256$ chiều, residual fusion hệ số $0.05$ và gate khởi tạo âm mạnh. Nhánh reliability chỉ hiệu chỉnh descriptor ở mức nhỏ. \\
+Local reliability & Visibility loss và consistency loss có cùng trọng số $0.10$; không dùng metric loss phụ và regularization phụ. Thiết lập này tập trung học độ tin cậy token từ tín hiệu che khuất. \\
+Local reliability & Synthetic occlusion luôn bật, vùng che chiếm khoảng $10\%$--$28\%$ diện tích ảnh để tạo giám sát visibility cho token cục bộ. \\
+Phiên bản kết hợp & Bật đồng thời semantic alignment và local reliability; pixel decoder không dùng trong cấu hình báo cáo để tập trung so sánh hai tín hiệu chính. \\
 \bottomrule
 \end{tabular}
 \caption{Các thiết lập riêng của semantic alignment và local reliability.}
 \label{tab:appendix_method_specific}
-\end{table*}
+\end{table}
 
 \subsection{Đo độ trễ}
 
-\begin{table}[!h]
+\begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.12}
 \setlength{\tabcolsep}{4pt}
