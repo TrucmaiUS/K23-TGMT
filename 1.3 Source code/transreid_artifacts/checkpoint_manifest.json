@@ -1,0 +1,6 @@
+{
+  "market_baseline": "runs/fair_market_baseline/transformer_best.pth",
+  "market_sem_align": "runs/fair_market_sem_align/transformer_best.pth",
+  "market_local_reliability": "runs/fair_market_local_reliability/transformer_best.pth",
+  "market_sem_align_reliability": "runs/fair_market_sem_align_reliability/transformer_best.pth"
+}

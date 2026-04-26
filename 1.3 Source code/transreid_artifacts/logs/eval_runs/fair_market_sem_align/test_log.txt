@@ -1,0 +1,249 @@
+2026-04-25 18:59:23,371 transreid INFO: Namespace(config_file='configs/Market/vit_transreid_stride_sem_align.yml', opts=['MODEL.DEVICE_ID', "'0'", 'MODEL.PRETRAIN_CHOICE', 'none', 'DATASETS.ROOT_DIR', '/content/data/', 'OUTPUT_DIR', 'eval_runs/fair_market_sem_align', 'TEST.WEIGHT', 'runs/fair_market_sem_align/transformer_best.pth', 'TEST.IMS_PER_BATCH', '256'])
+2026-04-25 18:59:23,371 transreid INFO: Loaded configuration file configs/Market/vit_transreid_stride_sem_align.yml
+2026-04-25 18:59:23,371 transreid INFO: 
+MODEL:
+  PRETRAIN_CHOICE: 'imagenet'
+  PRETRAIN_PATH: '/home/heshuting/.cache/torch/checkpoints/jx_vit_base_p16_224-80ecf9dd.pth'
+  METRIC_LOSS_TYPE: 'triplet'
+  IF_LABELSMOOTH: 'off'
+  IF_WITH_CENTER: 'no'
+  NAME: 'transformer'
+  NO_MARGIN: True
+  DEVICE_ID: ('5')
+  TRANSFORMER_TYPE: 'vit_base_patch16_224_TransReID'
+  STRIDE_SIZE: [12, 12]
+  SIE_CAMERA: True
+  SIE_COE: 3.0
+  JPM: True
+  RE_ARRANGE: True
+  SEM_ALIGN:
+    ENABLED: True
+    NUM_PARTS: 6
+    MASK_DIR: 'semantic_groups'
+    MASK_EXT: '.png'
+    SCORE_HIDDEN_DIM_RATIO: 4
+    REF_HIDDEN_DIM_RATIO: 2
+    LAMBDA_ALIGN: 0.0
+    LAMBDA_SEP: 0.0
+    LAMBDA_BATCH: 0.0
+    LAMBDA_PATCH: 0.2
+    SEP_MARGIN: 0.2
+    MATCH_TEMPERATURE: 0.07
+    EPS: 1e-6
+    VISIBLE_THRESHOLD: 1.0
+    DETACH_REFERENCE: True
+    DETACH_BATCH_PROTOTYPES: True
+    FLIP_LABEL_PAIRS: [[3, 4], [5, 6]]  # default for lip6 grouped masks; override to [] for non-left/right presets
+    WARMUP_EPOCHS: 20
+    FUSE_GLOBAL: False
+    FUSION_HIDDEN_DIM_RATIO: 4
+    PATCH_HIDDEN_DIM_RATIO: 4
+
+INPUT:
+  SIZE_TRAIN: [256, 128]
+  SIZE_TEST: [256, 128]
+  PROB: 0.5 # random horizontal flip
+  RE_PROB: 0.5 # paired random erasing is applied to both image and semantic mask
+  PADDING: 10
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+
+DATASETS:
+  NAMES: ('market1501')
+  ROOT_DIR: ('../../data')
+
+DATALOADER:
+  SAMPLER: 'softmax_triplet'
+  NUM_INSTANCE: 4
+  NUM_WORKERS: 8
+
+SOLVER:
+  OPTIMIZER_NAME: 'SGD'
+  MAX_EPOCHS: 120
+  BASE_LR: 0.008
+  IMS_PER_BATCH: 64
+  WARMUP_METHOD: 'linear'
+  LARGE_FC_LR: False
+  CHECKPOINT_PERIOD: 5
+  LOG_PERIOD: 50
+  EVAL_PERIOD: 10
+  WEIGHT_DECAY: 1e-4
+  WEIGHT_DECAY_BIAS: 1e-4
+  BIAS_LR_FACTOR: 2
+
+TEST:
+  EVAL: True
+  IMS_PER_BATCH: 256
+  RE_RANKING: False
+  WEIGHT: ''
+  NECK_FEAT: 'before'
+  FEAT_NORM: 'yes'
+  USE_JPM_FUSION: True
+  SAVE_BEST: True
+
+OUTPUT_DIR: '../logs/market_vit_transreid_stride_sem_align'
+
+2026-04-25 18:59:23,371 transreid INFO: Running with config:
+DATALOADER:
+  NUM_INSTANCE: 4
+  NUM_WORKERS: 8
+  SAMPLER: softmax_triplet
+DATASETS:
+  NAMES: market1501
+  ROOT_DIR: /content/data/
+INPUT:
+  PADDING: 10
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+  PROB: 0.5
+  REL_OCC_FILL: 0.0
+  REL_OCC_MAX_AREA: 0.28
+  REL_OCC_MIN_AREA: 0.1
+  REL_OCC_MIN_ASPECT: 0.5
+  REL_OCC_PROB: 1.0
+  RE_PROB: 0.5
+  SIZE_TEST: [256, 128]
+  SIZE_TRAIN: [256, 128]
+MODEL:
+  ATT_DROP_RATE: 0.0
+  COS_LAYER: False
+  DEFORMABLE_ATTN:
+    ENABLED: False
+    N_POINTS: 4
+    OFFSET_SCALE: 2.0
+    START_LAYER: 8
+  DEVICE: cuda
+  DEVICE_ID: 0
+  DEVIDE_LENGTH: 4
+  DIST_TRAIN: False
+  DROP_OUT: 0.0
+  DROP_PATH: 0.1
+  ID_LOSS_TYPE: softmax
+  ID_LOSS_WEIGHT: 1.0
+  IF_LABELSMOOTH: off
+  IF_WITH_CENTER: no
+  JPM: True
+  LAST_STRIDE: 1
+  LOCAL_GROUP:
+    ENABLED: False
+    LAMBDA_ID: 0.5
+    ROW_BOUNDS: [0, 5, 10, 16]
+  METRIC_LOSS_TYPE: triplet
+  NAME: transformer
+  NECK: bnneck
+  NO_MARGIN: True
+  OCC_AUG:
+    CONSISTENCY_WEIGHT: 0.3
+    ENABLED: False
+    INTER_PERSON: True
+    MAX_AREA: 0.3
+    MAX_ASPECT: 2.0
+    MIN_AREA: 0.08
+    MIN_ASPECT: 0.5
+    OCC_LOSS_WEIGHT: 0.5
+    PROB: 0.5
+    START_EPOCH: 0
+  PRETRAIN_CHOICE: none
+  PRETRAIN_PATH: /home/heshuting/.cache/torch/checkpoints/jx_vit_base_p16_224-80ecf9dd.pth
+  RELIABILITY_PIPELINE: False
+  REL_CONSIST_LOSS_WEIGHT: 0.1
+  REL_DETACH_CONSIST_WEIGHTS: True
+  REL_FUSION_ALPHA: 0.05
+  REL_GATE_INIT: -4.0
+  REL_HIDDEN_DIM: 256
+  REL_METRIC_LOSS_WEIGHT: 0.0
+  REL_REG_TYPE: entropy
+  REL_REG_WEIGHT: 0.0
+  REL_USE_SOFTMAX: False
+  REL_VIS_LOSS_WEIGHT: 0.1
+  RE_ARRANGE: True
+  SEM_ALIGN:
+    DETACH_BATCH_PROTOTYPES: True
+    DETACH_REFERENCE: True
+    ENABLED: True
+    EPS: 1e-06
+    FLIP_LABEL_PAIRS: [[3, 4], [5, 6]]
+    FUSE_GLOBAL: False
+    FUSION_HIDDEN_DIM_RATIO: 4
+    LAMBDA_ALIGN: 0.0
+    LAMBDA_BATCH: 0.0
+    LAMBDA_PATCH: 0.2
+    LAMBDA_PIXEL: 0.0
+    LAMBDA_SEP: 0.0
+    MASK_DIR: semantic_groups
+    MASK_EXT: .png
+    MATCH_TEMPERATURE: 0.07
+    NUM_PARTS: 6
+    PATCH_HIDDEN_DIM_RATIO: 4
+    PIXEL_DECODER_ENABLED: False
+    PIXEL_DECODER_HIDDEN_DIM_RATIO: 4
+    PIXEL_LOSS_BG_WEIGHT: 0.25
+    REF_HIDDEN_DIM_RATIO: 2
+    SCORE_HIDDEN_DIM_RATIO: 4
+    SEP_MARGIN: 0.2
+    VISIBLE_THRESHOLD: 1.0
+    WARMUP_EPOCHS: 20
+  SHIFT_NUM: 5
+  SHUFFLE_GROUP: 2
+  SIE_CAMERA: True
+  SIE_COE: 3.0
+  SIE_VIEW: False
+  STRIDE_SIZE: [12, 12]
+  TOKEN_ENRICH:
+    ENABLED: False
+    ENRICH_SCALE: 0.5
+    TOPK_RATIO: 0.3
+    USE_TOPK_ONLY: False
+  TRANSFORMER_TYPE: vit_base_patch16_224_TransReID
+  TRIPLET_LOSS_WEIGHT: 1.0
+  VIS_WEIGHT:
+    ALPHA_REG: 1.0
+    BETA_REG: 1.0
+    ENABLED: False
+    EPS: 1e-06
+    HIDDEN_DIM_RATIO: 4
+    LAMBDA_REG: 0.05
+    TARGET_MEAN: 0.5
+    WARMUP_EPOCHS: 10
+OUTPUT_DIR: eval_runs/fair_market_sem_align
+SOLVER:
+  BASE_LR: 0.008
+  BIAS_LR_FACTOR: 2
+  CENTER_LOSS_WEIGHT: 0.0005
+  CENTER_LR: 0.5
+  CHECKPOINT_PERIOD: 5
+  COSINE_MARGIN: 0.5
+  COSINE_SCALE: 30
+  EVAL_PERIOD: 10
+  GAMMA: 0.1
+  IMS_PER_BATCH: 64
+  LARGE_FC_LR: False
+  LOG_PERIOD: 50
+  MARGIN: 0.3
+  MAX_EPOCHS: 120
+  MOMENTUM: 0.9
+  OPTIMIZER_NAME: SGD
+  SEED: 1234
+  START_EPOCH: 0
+  STEPS: (40, 70)
+  WARMUP_EPOCHS: 5
+  WARMUP_FACTOR: 0.01
+  WARMUP_METHOD: linear
+  WEIGHT_DECAY: 0.0001
+  WEIGHT_DECAY_BIAS: 0.0001
+TEST:
+  DIST_MAT: dist_mat.npy
+  EVAL: True
+  FEAT_NORM: yes
+  IMS_PER_BATCH: 256
+  NECK_FEAT: before
+  RE_RANKING: False
+  SAVE_BEST: True
+  USE_JPM_FUSION: True
+  WEIGHT: runs/fair_market_sem_align/transformer_best.pth
+2026-04-25 18:59:24,268 transreid.test INFO: Enter inferencing
+2026-04-25 18:59:46,531 transreid.test INFO: Validation Results 
+2026-04-25 18:59:46,531 transreid.test INFO: mAP: 89.5%
+2026-04-25 18:59:46,531 transreid.test INFO: CMC curve, Rank-1  :95.3%
+2026-04-25 18:59:46,531 transreid.test INFO: CMC curve, Rank-5  :98.5%
+2026-04-25 18:59:46,531 transreid.test INFO: CMC curve, Rank-10 :99.0%

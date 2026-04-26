@@ -1,0 +1,5 @@
+name,dataset,config,output_dir,checkpoint,mAP,rank1,rank5,rank10,eval_log
+market_baseline,market1501,configs/Market/vit_transreid_stride_fair.yml,runs/fair_market_baseline,runs/fair_market_baseline/transformer_best.pth,89.2,95.1,98.3,98.9,/content/transreid_artifacts/eval_logs/market_baseline_eval.log
+market_sem_align,market1501,configs/Market/vit_transreid_stride_sem_align.yml,runs/fair_market_sem_align,runs/fair_market_sem_align/transformer_best.pth,89.5,95.3,98.5,99.0,/content/transreid_artifacts/eval_logs/market_sem_align_eval.log
+market_local_reliability,market1501,configs/Market/vit_transreid_stride_local_reliability.yml,runs/fair_market_local_reliability,runs/fair_market_local_reliability/transformer_best.pth,89.9,95.2,98.6,99.1,/content/transreid_artifacts/eval_logs/market_local_reliability_eval.log
+market_sem_align_reliability,market1501,configs/Market/vit_transreid_stride_sem_align_reliability.yml,runs/fair_market_sem_align_reliability,runs/fair_market_sem_align_reliability/transformer_best.pth,90.1,95.4,98.6,99.1,/content/transreid_artifacts/eval_logs/market_sem_align_reliability_eval.log

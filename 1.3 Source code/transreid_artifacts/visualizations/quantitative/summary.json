@@ -1,0 +1,46 @@
+[
+  {
+    "model": "Baseline",
+    "mAP": 89.2,
+    "rank1": 95.1,
+    "rank5": 98.3,
+    "rank10": 98.9,
+    "mean_ms": 4.6264790391921995,
+    "delta_mAP": 0.0,
+    "delta_rank1": 0.0,
+    "delta_latency_ms": 0.0
+  },
+  {
+    "model": "Semantic",
+    "mAP": 89.5,
+    "rank1": 95.3,
+    "rank5": 98.5,
+    "rank10": 99.0,
+    "mean_ms": 4.6372233629226685,
+    "delta_mAP": 0.29999999999999716,
+    "delta_rank1": 0.20000000000000284,
+    "delta_latency_ms": 0.010744323730468963
+  },
+  {
+    "model": "Local Rel.",
+    "mAP": 89.9,
+    "rank1": 95.2,
+    "rank5": 98.6,
+    "rank10": 99.1,
+    "mean_ms": 4.786023025512695,
+    "delta_mAP": 0.7000000000000028,
+    "delta_rank1": 0.10000000000000853,
+    "delta_latency_ms": 0.1595439863204957
+  },
+  {
+    "model": "Semantic+Rel.",
+    "mAP": 90.1,
+    "rank1": 95.4,
+    "rank5": 98.6,
+    "rank10": 99.1,
+    "mean_ms": 4.783083209991455,
+    "delta_mAP": 0.8999999999999915,
+    "delta_rank1": 0.30000000000001137,
+    "delta_latency_ms": 0.15660417079925537
+  }
+]

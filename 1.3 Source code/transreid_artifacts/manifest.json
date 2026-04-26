@@ -1,0 +1,81 @@
+{
+  "created_at": "2026-04-25 19:21:30",
+  "repo_root": "/content/transreid_colab",
+  "data_root": "/content/data",
+  "pretrain_path": "/content/pretrained/jx_vit_base_p16_224-80ecf9dd.pth",
+  "experiments": [
+    {
+      "name": "market_baseline",
+      "dataset": "market1501",
+      "config": "configs/Market/vit_transreid_stride_fair.yml",
+      "output_dir": "runs/fair_market_baseline",
+      "eval_dir": "eval_runs/fair_market_baseline",
+      "batch_size": 64,
+      "base_lr": 0.008,
+      "num_workers": 8,
+      "num_classes": 751,
+      "camera_num": 6,
+      "view_num": 0,
+      "enabled": true
+    },
+    {
+      "name": "market_sem_align",
+      "dataset": "market1501",
+      "config": "configs/Market/vit_transreid_stride_sem_align.yml",
+      "output_dir": "runs/fair_market_sem_align",
+      "eval_dir": "eval_runs/fair_market_sem_align",
+      "batch_size": 64,
+      "base_lr": 0.008,
+      "num_workers": 8,
+      "num_classes": 751,
+      "camera_num": 6,
+      "view_num": 0,
+      "enabled": true
+    },
+    {
+      "name": "market_local_reliability",
+      "dataset": "market1501",
+      "config": "configs/Market/vit_transreid_stride_local_reliability.yml",
+      "output_dir": "runs/fair_market_local_reliability",
+      "eval_dir": "eval_runs/fair_market_local_reliability",
+      "batch_size": 64,
+      "base_lr": 0.008,
+      "num_workers": 8,
+      "num_classes": 751,
+      "camera_num": 6,
+      "view_num": 0,
+      "enabled": true
+    },
+    {
+      "name": "market_sem_align_reliability",
+      "dataset": "market1501",
+      "config": "configs/Market/vit_transreid_stride_sem_align_reliability.yml",
+      "output_dir": "runs/fair_market_sem_align_reliability",
+      "eval_dir": "eval_runs/fair_market_sem_align_reliability",
+      "batch_size": 64,
+      "base_lr": 0.008,
+      "num_workers": 8,
+      "num_classes": 751,
+      "camera_num": 6,
+      "view_num": 0,
+      "enabled": true
+    }
+  ],
+  "checkpoints": {
+    "market_baseline": "runs/fair_market_baseline/transformer_best.pth",
+    "market_sem_align": "runs/fair_market_sem_align/transformer_best.pth",
+    "market_local_reliability": "runs/fair_market_local_reliability/transformer_best.pth",
+    "market_sem_align_reliability": "runs/fair_market_sem_align_reliability/transformer_best.pth"
+  },
+  "checkpoint_keep_names": [
+    "transformer_120.pth",
+    "transformer_best.pth"
+  ],
+  "max_epochs_override": null,
+  "latency": {
+    "batch_size": 1,
+    "warmup": 30,
+    "iters": 100,
+    "amp": false
+  }
+}
