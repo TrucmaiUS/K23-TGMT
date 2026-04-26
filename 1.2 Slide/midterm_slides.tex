@@ -126,22 +126,19 @@
 
 % 5
 \begin{frame}{TransReID: mô hình nền dựa trên Vision Transformer}
-  \begin{columns}[T,onlytextwidth]
-    \column{.45\linewidth}
-    \begin{itemize}
-      \item ViT backbone chia ảnh thành chuỗi patch token.
-      \item Side Information Embedding bổ sung tín hiệu camera và viewpoint.
-      \item Jigsaw Patch Module khai thác đặc trưng cục bộ từ các nhóm patch.
-      \item ID loss và triplet loss hỗ trợ học embedding phân biệt danh tính.
-    \end{itemize}
-    \vspace{.12cm}
-    \keymessage{TransReID là baseline mạnh cho Re-ID nhờ kết hợp biểu diễn toàn cục và cục bộ.}
-    \column{.51\linewidth}
-    \centering
-    \includegraphics[width=\linewidth,height=.61\textheight,keepaspectratio]{transreid_framework.png}
-    \figcaption{Kiến trúc TransReID được dùng làm nền cho các biến thể mở rộng trong đồ án.}
-  \end{columns}
-  \note{Không đi sâu vào chi tiết cài đặt. Chỉ cần nhấn mạnh các thành phần chính: ViT, SIE, JPM và hai hàm mất mát cơ bản.}
+  \begin{itemize}
+    \item ViT backbone chia ảnh thành chuỗi patch token để học biểu diễn toàn cục và cục bộ.
+    \item Side Information Embedding bổ sung tín hiệu camera và viewpoint nhằm giảm sai khác liên camera.
+    \item Jigsaw Patch Module khai thác đặc trưng cục bộ từ các nhóm patch.
+    \item ID loss và triplet loss hỗ trợ học embedding phân biệt danh tính.
+  \end{itemize}
+  \vspace{.16cm}
+  \begin{block}{Vai trò trong đồ án}
+    TransReID được dùng làm backbone chung cho toàn bộ các biến thể; các hướng mở rộng sau đó chỉ bổ sung tín hiệu semantic hoặc reliability ở mức patch token.
+  \end{block}
+  \vspace{.08cm}
+  \keymessage{TransReID là baseline mạnh cho Re-ID và là nền chung để đánh giá tác động của các tín hiệu bổ trợ ở mức cục bộ.}
+  \note{Giữ slide baseline ở mức khái quát, không cần hình kiến trúc riêng. Điểm chính là TransReID đóng vai trò backbone chung cho các biến thể phía sau.}
 \end{frame}
 
 % 6
@@ -205,31 +202,17 @@
 
 % 9
 \begin{frame}{Cơ chế tích hợp độ tin cậy cục bộ}
-  \centering
-  \begin{tikzpicture}[>=Latex,scale=.82,transform shape]
-    \tikzstyle{box}=[draw,rounded corners,align=center,minimum width=2.65cm,minimum height=.72cm,fill=SoftGray]
-    \node[box,fill=SoftBlue]   (img)   at (0,0.8)   {Ảnh đầu vào};
-    \node[box]                 (patch) at (3.1,0.8) {Patch tokens};
-    \node[box,fill=SoftOrange] (rel)   at (6.2,0.8) {Reliability\\estimation};
-    \node[box]                 (local) at (3.1,-1.0){Local features};
-    \node[box,fill=SoftGreen]  (fusion)at (6.2,-1.0){Reliability-aware\\feature fusion};
-    \node[box]                 (emb)   at (9.3,-1.0){Re-ID\\embedding};
-    \node[box,fill=SoftBlue]   (rank)  at (12.4,-1.0){Ranked\\gallery};
-    \draw[->,thick] (img) -- (patch);
-    \draw[->,thick] (patch) -- (rel);
-    \draw[->,thick] (patch) -- (local);
-    \draw[->,thick] (rel) -- (fusion);
-    \draw[->,thick] (local) -- (fusion);
-    \draw[->,thick] (fusion) -- (emb);
-    \draw[->,thick] (emb) -- (rank);
-  \end{tikzpicture}
-  \vspace{.24cm}
   \begin{itemize}
-    \item Đặc trưng cục bộ vẫn được học từ patch token của TransReID.
-    \item Reliability score điều chỉnh mức đóng góp của từng patch trước khi tạo embedding cuối.
+    \item Đặc trưng cục bộ vẫn được học từ local/JPM patch token của TransReID.
+    \item Từ các patch này, mô hình ước lượng reliability score để phản ánh mức độ tin cậy của từng vùng ảnh.
+    \item Synthetic occlusion pairs cung cấp tín hiệu phụ cho việc học visibility và tính ổn định giữa ảnh sạch và ảnh bị che khuất.
+    \item Reliability score được đưa vào quá trình fusion như một tín hiệu điều chỉnh nhẹ trước khi tạo embedding cuối.
   \end{itemize}
-  \keymessage{Cơ chế này làm cho fusion cục bộ phụ thuộc vào chất lượng quan sát của từng vùng ảnh.}
-  \note{Sơ đồ chỉ giữ lại dòng xử lý chính để tránh cảm giác output notebook. Mục tiêu là giải thích logic phương pháp, không đi vào chi tiết triển khai.}
+  \vspace{.18cm}
+  \begin{block}{Ý nghĩa phương pháp}
+    Local Reliability không thay đổi bài toán truy hồi, mà làm cho quá trình tổng hợp đặc trưng cục bộ phụ thuộc nhiều hơn vào chất lượng quan sát của từng patch.
+  \end{block}
+  \note{Bỏ sơ đồ kiến trúc riêng. Slide này chỉ giữ logic phương pháp: dự đoán reliability, dùng synthetic occlusion để giám sát và điều chỉnh fusion cục bộ.}
 \end{frame}
 
 % 10
@@ -248,22 +231,19 @@
 
 % 11
 \begin{frame}{Semantic Alignment: căn chỉnh patch theo vùng cơ thể}
-  \begin{columns}[T,onlytextwidth]
-    \column{.50\linewidth}
-    \begin{itemize}
-      \item Human parser phân tách ảnh người thành các vùng cơ thể có ý nghĩa.
-      \item Mỗi patch token được gán target semantic theo vùng chiếm ưu thế.
-      \item Semantic target giúp local feature gắn với bộ phận cơ thể thay vì chỉ tọa độ ảnh.
-      \item Cơ chế này hỗ trợ so sánh các vùng tương ứng giữa nhiều camera.
-    \end{itemize}
-    \vspace{.10cm}
-    \keymessage{Semantic Alignment bổ sung ý nghĩa bộ phận cơ thể cho patch token.}
-    \column{.46\linewidth}
-    \centering
-    \includegraphics[width=\linewidth,height=.57\textheight,keepaspectratio]{semantic_framework.png}
-    \figcaption{Semantic supervision được gắn vào biểu diễn patch-level nhằm hỗ trợ căn chỉnh đặc trưng cục bộ.}
-  \end{columns}
-  \note{Nhấn mạnh khác biệt với Local Reliability: semantic trả lời patch đang thuộc vùng cơ thể nào, không phải patch đó đáng tin đến đâu.}
+  \begin{itemize}
+    \item Human parser phân tách ảnh người thành các vùng cơ thể có ý nghĩa như đầu, thân, tay và chân.
+    \item Mỗi patch token được gán target semantic theo vùng chiếm ưu thế trên ảnh.
+    \item Semantic target giúp local feature gắn với bộ phận cơ thể thay vì chỉ dựa trên tọa độ ảnh.
+    \item Tín hiệu semantic được dùng như supervision phụ để hỗ trợ so sánh các vùng tương ứng giữa nhiều camera.
+  \end{itemize}
+  \vspace{.18cm}
+  \begin{block}{Khác biệt với Local Reliability}
+    Semantic Alignment trả lời patch đang thuộc vùng cơ thể nào, trong khi Local Reliability ước lượng patch đó đáng tin đến mức nào cho quá trình matching.
+  \end{block}
+  \vspace{.08cm}
+  \keymessage{Semantic Alignment bổ sung ý nghĩa bộ phận cơ thể cho patch token trong quá trình học biểu diễn cục bộ.}
+  \note{Giữ slide semantic ở mức ý tưởng và động cơ phương pháp, không dùng hình kiến trúc riêng.}
 \end{frame}
 
 % 12
@@ -315,40 +295,17 @@
 \end{frame}
 
 % 15
-\begin{frame}{Kết hợp căn chỉnh semantic và độ tin cậy cục bộ}
+\begin{frame}{Kiến trúc tổng quát của hướng kết hợp}
   \small
-  \begin{columns}[T,onlytextwidth]
-    \column{.47\linewidth}
-    \begin{itemize}
-      \item Semantic Alignment xác định ý nghĩa vùng cơ thể của patch.
-      \item Local Reliability ước lượng mức độ tin cậy của patch.
-      \item Hai tín hiệu này bổ sung nhau trong biểu diễn cục bộ: semantic xác định vùng có ý nghĩa, còn reliability giảm ảnh hưởng của vùng kém tin cậy.
-      \item Hướng kết hợp khai thác đồng thời hai tín hiệu này trong quá trình tổng hợp đặc trưng.
-      \item Mục tiêu là tăng chất lượng embedding khi có thay đổi tư thế, nhiễu nền hoặc che khuất.
-    \end{itemize}
-    \column{.49\linewidth}
-    \centering
-    \begin{tikzpicture}[node distance=.44cm,>=Latex,scale=.78,transform shape]
-      \tikzstyle{box}=[draw,rounded corners,align=center,minimum width=2.50cm,minimum height=.62cm,fill=SoftGray]
-      \node[box,fill=SoftBlue] (img) {Ảnh đầu vào};
-      \node[box,below=of img] (vit) {Patch tokens};
-      \node[box,fill=SoftGreen,below left=.55cm and .55cm of vit] (sem) {Semantic\\groups};
-      \node[box,fill=SoftOrange,below right=.55cm and .55cm of vit] (rel) {Reliability\\scores};
-      \node[box,below=1.5cm of vit] (fusion) {Structured\\feature fusion};
-      \node[box,fill=SoftBlue,below=of fusion] (emb) {Re-ID\\embedding};
-      \node[box,fill=SoftGreen,below=of emb] (rank) {Ranking};
-      \draw[->,thick] (img) -- (vit);
-      \draw[->,thick] (vit) -- (sem);
-      \draw[->,thick] (vit) -- (rel);
-      \draw[->,thick] (sem) -- (fusion);
-      \draw[->,thick] (rel) -- (fusion);
-      \draw[->,thick] (fusion) -- (emb);
-      \draw[->,thick] (emb) -- (rank);
-    \end{tikzpicture}
-  \end{columns}
-  \vspace{.08cm}
-  \keymessage{Hướng kết hợp nhằm giữ lại các vùng vừa có ý nghĩa semantic, vừa đáng tin cậy cho matching.}
-  \note{Nhấn mạnh đây là giả thuyết phương pháp dựa trên tính bổ trợ của hai tín hiệu, không diễn giải như một giải pháp triệt để cho mọi tình huống.}
+  \centering
+  \includegraphics[width=.95\linewidth,height=.60\textheight,keepaspectratio]{arch_combined_semantic_reliability.png}
+  \figcaption{Backbone TransReID được chia sẻ; semantic alignment dùng cho giám sát patch token trong huấn luyện, còn local reliability điều chỉnh đặc trưng cục bộ trước khi tạo descriptor cuối.}
+  \vspace{.04cm}
+  \begin{itemize}
+    \item Semantic branch bổ sung patch-level supervision theo vùng cơ thể có ý nghĩa.
+    \item Reliability branch học trọng số cục bộ để giảm ảnh hưởng của vùng bị che khuất hoặc kém tin cậy.
+  \end{itemize}
+  \note{Đây là slide kiến trúc duy nhất của deck. Hình cho thấy mối quan hệ giữa backbone chung, semantic supervision trong huấn luyện và reliability branch trong quá trình tạo descriptor cuối.}
 \end{frame}
 
 \section{Thiết lập thực nghiệm}
