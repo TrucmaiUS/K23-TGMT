@@ -52,6 +52,4 @@ source_code/**/latest_checkpoint*
 source_code/**/best_model*
 source_code/**/latest_model*
 Data/
-1.4 Demo/
-
 .pth
