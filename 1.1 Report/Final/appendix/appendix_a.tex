@@ -6,8 +6,8 @@
 
 Các kết quả định lượng trong báo cáo được đánh giá trên Market-1501
 \cite{zheng2015market1501}. Bộ dữ liệu gồm $12{,}936$ ảnh huấn luyện của
-$751$ định danh, $3{,}368$ ảnh truy vấn thuộc $750$ định danh và $15{,}913$
-ảnh gallery thuộc $751$ định danh, được thu thập từ $6$ camera.
+$751$ ID, $3{,}368$ ảnh truy vấn thuộc $750$ ID và $15{,}913$
+ảnh gallery thuộc $751$ ID, được thu thập từ $6$ camera.
 
 \begin{table}[H]
 \centering
@@ -19,7 +19,7 @@ $751$ định danh, $3{,}368$ ảnh truy vấn thuộc $750$ định danh và $1
 \midrule
 Bộ dữ liệu & Market-1501 \\
 Train / query / gallery & $12{,}936$ / $3{,}368$ / $15{,}913$ ảnh \\
-Số định danh huấn luyện & $751$ \\
+Số ID huấn luyện & $751$ \\
 Số camera & $6$ \\
 GPU & NVIDIA RTX PRO 6000 Blackwell \\
 \bottomrule
@@ -75,7 +75,7 @@ Epoch & $120$ \\
 Batch size & $64$ \\
 Learning rate & $0.008$ \\
 Weight decay & $10^{-4}$ \\
-Sampler & Softmax-triplet, $4$ ảnh mỗi định danh \\
+Sampler & Softmax-triplet, $4$ ảnh mỗi ID \\
 Checkpoint & Checkpoint có validation mAP tốt nhất \\
 \bottomrule
 \end{tabular}
@@ -120,8 +120,8 @@ GPU & NVIDIA RTX PRO 6000 Blackwell \\
 Batch size & $1$ \\
 Warm-up & $30$ vòng \\
 Số vòng đo & $100$ vòng \\
-AMP & Không dùng \\
-Đơn vị báo cáo & Độ trễ trung bình trên một ảnh \\
+AMP & Không sử dụng \\
+Đơn vị & Độ trễ trung bình trên một ảnh (ms) \\
 \bottomrule
 \end{tabular}
 \caption{Thiết lập benchmark độ trễ suy luận.}
