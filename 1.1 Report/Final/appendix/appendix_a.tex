@@ -2,20 +2,37 @@
 \section{Cấu hình thực nghiệm chi tiết}
 \label{sec:appendix_experimental_config}
 
-\subsection{Bộ dữ liệu và chuẩn bị semantic mask}
+\subsection{Bộ dữ liệu và môi trường thực nghiệm}
 
-Nhóm thực nghiệm chính được lấy từ artifact
-\path{transreid_report_artifacts_20260425_192134}. Các kết quả định lượng được
-báo cáo trên Market-1501 \cite{zheng2015market1501}. Bộ dữ liệu gồm
-$12{,}936$ ảnh huấn luyện của $751$ định danh, $3{,}368$ ảnh truy vấn thuộc
-$750$ định danh và $15{,}913$ ảnh gallery thuộc $751$ định danh, được thu thập
-từ $6$ camera.
+Các kết quả định lượng trong báo cáo được đánh giá trên Market-1501
+\cite{zheng2015market1501}. Bộ dữ liệu gồm $12{,}936$ ảnh huấn luyện của
+$751$ định danh, $3{,}368$ ảnh truy vấn thuộc $750$ định danh và $15{,}913$
+ảnh gallery thuộc $751$ định danh, được thu thập từ $6$ camera.
+
+\begin{table}[!h]
+\centering
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{2.7cm}L{5.0cm}@{}}
+\toprule
+\textbf{Hạng mục} & \textbf{Thiết lập} \\
+\midrule
+Bộ dữ liệu & Market-1501 \\
+Train / query / gallery & $12{,}936$ / $3{,}368$ / $15{,}913$ ảnh \\
+Số định danh huấn luyện & $751$ \\
+Số camera & $6$ \\
+GPU huấn luyện & NVIDIA RTX PRO 6000 Blackwell \\
+GPU đo độ trễ & NVIDIA RTX PRO 6000 Blackwell \\
+\bottomrule
+\end{tabular}
+\caption{Bộ dữ liệu và phần cứng sử dụng trong thực nghiệm.}
+\label{tab:appendix_dataset_hardware}
+\end{table}
 
 Đối với các cấu hình bật semantic alignment, semantic mask được sinh offline
-bằng human parsing và lưu trong thư mục \path{semantic_groups}. Mask được đưa
-qua cùng các phép biến đổi hình học với ảnh đầu vào, sau đó được resize về lưới
-patch để tạo nhãn semantic patch-level. Baseline TransReID và local reliability
-không yêu cầu semantic mask.
+bằng human parsing. Mask được đưa qua cùng các phép biến đổi hình học với ảnh
+đầu vào, sau đó được resize về lưới patch để tạo nhãn semantic patch-level.
+Baseline TransReID và local reliability không yêu cầu semantic mask.
 
 \subsection{Các cấu hình được so sánh}
 
@@ -23,61 +40,90 @@ không yêu cầu semantic mask.
 \centering
 \renewcommand{\arraystretch}{1.12}
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}L{3.8cm}L{5.4cm}L{6.4cm}@{}}
+\begin{tabular}{@{}L{3.8cm}L{5.2cm}L{6.6cm}@{}}
 \toprule
-\textbf{Tên cấu hình} & \textbf{File cấu hình} & \textbf{Thành phần chính} \\
+\textbf{Phương pháp} & \textbf{File cấu hình} & \textbf{Mô tả} \\
 \midrule
-Baseline TransReID & \path{vit_transreid_stride_fair.yml} & TransReID stride với JPM và SIE camera, không bật nhánh phụ. \\
-Semantic alignment & \path{vit_transreid_stride_sem_align.yml} & Bật semantic patch head và patch-level semantic cross-entropy. \\
-Local reliability & \path{vit_transreid_stride_local_reliability.yml} & Bật reliability head, synthetic local occlusion, visibility loss và consistency loss. \\
-Semantic alignment + local reliability & \path{vit_transreid_stride_sem_align_reliability.yml} & Kết hợp semantic supervision với reliability-guided local correction. \\
+Baseline TransReID & \path{vit_transreid_stride_fair.yml} & TransReID stride với JPM và SIE camera. \\
+Semantic alignment & \path{vit_transreid_stride_sem_align.yml} & Thêm giám sát semantic ở mức patch token trong huấn luyện. \\
+Local reliability & \path{vit_transreid_stride_local_reliability.yml} & Học độ tin cậy token cục bộ bằng ảnh che khuất tổng hợp và dùng residual yếu ở pha suy luận. \\
+Semantic alignment + local reliability & \path{vit_transreid_stride_sem_align_reliability.yml} & Kết hợp giám sát semantic trong huấn luyện với hiệu chỉnh local reliability khi suy luận. \\
 \bottomrule
 \end{tabular}
-\caption{File cấu hình và thành phần chính của các mô hình được so sánh.}
+\caption{Các phương pháp được so sánh trong thực nghiệm chính.}
 \label{tab:appendix_configs}
 \end{table*}
 
 \subsection{Thiết lập huấn luyện chung}
 
-Tất cả cấu hình đều sử dụng backbone
-\texttt{vit\_base\_patch16\_224\_TransReID}, stride \texttt{[12,12]},
-\texttt{SIE\_CAMERA=True}, \texttt{JPM=True}, \texttt{RE\_ARRANGE=True}. Trọng
-số khởi tạo là ImageNet checkpoint \path{jx_vit_base_p16_224-80ecf9dd.pth}.
-Kích thước ảnh đầu vào cho huấn luyện và đánh giá là \(256 \times 128\).
+\begin{table}[!h]
+\centering
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{2.7cm}L{5.0cm}@{}}
+\toprule
+\textbf{Hạng mục} & \textbf{Giá trị} \\
+\midrule
+Backbone & ViT-B/16 TransReID stride \\
+Kích thước ảnh & $256 \times 128$ \\
+Stride patch & $12 \times 12$ \\
+Nhánh local & JPM, có re-arrange patch token \\
+Thông tin camera & SIE camera \\
+Khởi tạo & ImageNet pretrained ViT-B/16 \\
+Optimizer & SGD \\
+Epoch & $120$ \\
+Batch size & $64$ \\
+Learning rate & $0.008$ \\
+Weight decay & $10^{-4}$ \\
+Sampler & Softmax-triplet, $4$ ảnh mỗi định danh \\
+Chu kỳ đánh giá & Mỗi $10$ epoch \\
+Checkpoint báo cáo & Checkpoint có validation mAP tốt nhất \\
+\bottomrule
+\end{tabular}
+\caption{Thiết lập huấn luyện chung cho toàn bộ cấu hình.}
+\label{tab:appendix_training_common}
+\end{table}
 
-Các siêu tham số huấn luyện chung gồm optimizer SGD, batch size $64$, learning
-rate $0.008$, weight decay $10^{-4}$, \texttt{NUM\_INSTANCE=4},
-\texttt{NUM\_WORKERS=8}, $120$ epoch, \texttt{CHECKPOINT\_PERIOD=5} và
-\texttt{EVAL\_PERIOD=10}. Checkpoint dùng để báo cáo kết quả là
-\texttt{transformer\_best.pth} của từng cấu hình.
+\subsection{Thiết lập riêng của từng cải tiến}
 
-\subsection{Thiết lập semantic alignment}
-
-Semantic alignment sử dụng \texttt{SEM\_ALIGN.ENABLED=True},
-\texttt{NUM\_PARTS=6}, \texttt{MASK\_DIR=semantic\_groups},
-\texttt{LAMBDA\_PATCH=0.2}, \texttt{WARMUP\_EPOCHS=20},
-\texttt{FUSE\_GLOBAL=False} và \texttt{DETACH\_REFERENCE=True}. Các thành phần
-align, separation và batch prototype loss được tắt trong cấu hình báo cáo để
-giữ semantic branch ở vai trò regularizer nhẹ.
-
-\subsection{Thiết lập local reliability}
-
-Local reliability sử dụng \texttt{RELIABILITY\_PIPELINE=True},
-\texttt{REL\_HIDDEN\_DIM=256}, \texttt{REL\_FUSION\_ALPHA=0.05},
-\texttt{REL\_GATE\_INIT=-4.0}, \texttt{REL\_VIS\_LOSS\_WEIGHT=0.10},
-\texttt{REL\_CONSIST\_LOSS\_WEIGHT=0.10},
-\texttt{REL\_METRIC\_LOSS\_WEIGHT=0.00} và
-\texttt{REL\_REG\_WEIGHT=0.0}. Synthetic occlusion dùng xác suất $1.0$, vùng
-che khuất có diện tích từ $0.10$ đến $0.28$ ảnh.
-
-\subsection{Thiết lập bản kết hợp}
-
-Bản kết hợp bật đồng thời semantic alignment và local reliability với các tham
-số nêu trên. Pixel decoder được tắt trong cấu hình báo cáo để tập trung so
-sánh semantic token supervision và reliability-guided local correction.
+\begin{table*}[!t]
+\centering
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{3.4cm}L{5.4cm}L{6.8cm}@{}}
+\toprule
+\textbf{Nhóm} & \textbf{Thiết lập} & \textbf{Mục đích} \\
+\midrule
+Semantic alignment & $6$ nhóm semantic từ human parsing; patch-level cross-entropy với trọng số $0.2$; warm-up $20$ epoch & Buộc patch token giữ thông tin part-level mà không đưa semantic mask vào descriptor suy luận. \\
+Semantic alignment & Không trộn semantic logits vào global descriptor; semantic reference được tách gradient & Giữ semantic branch ở vai trò regularizer trong huấn luyện. \\
+Local reliability & Reliability head ẩn $256$ chiều; residual fusion với hệ số $0.05$; gate khởi tạo âm mạnh & Cho phép nhánh reliability hiệu chỉnh descriptor ở mức nhỏ và ổn định. \\
+Local reliability & Visibility loss và consistency loss cùng trọng số $0.10$; không dùng metric loss phụ và regularization phụ & Tập trung học độ tin cậy token từ tín hiệu che khuất thay vì tạo thêm mục tiêu truy hồi cạnh tranh. \\
+Local reliability & Synthetic occlusion luôn bật; vùng che chiếm khoảng $10\%$--$28\%$ diện tích ảnh & Tạo tín hiệu giám sát visibility cho token cục bộ. \\
+Phiên bản kết hợp & Bật đồng thời semantic alignment và local reliability; pixel decoder không dùng trong cấu hình báo cáo & So sánh tác động bổ sung của hai tín hiệu semantic và reliability trong cùng backbone. \\
+\bottomrule
+\end{tabular}
+\caption{Các thiết lập riêng của semantic alignment và local reliability.}
+\label{tab:appendix_method_specific}
+\end{table*}
 
 \subsection{Đo độ trễ}
 
-Độ trễ suy luận được đo trên GPU với batch size $1$, $30$ vòng warm-up, $100$
-vòng đo và không dùng AMP. Số liệu được báo cáo bằng thời gian trung bình trên
-một ảnh và FPS tương ứng.
+\begin{table}[!h]
+\centering
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{2.7cm}L{5.0cm}@{}}
+\toprule
+\textbf{Hạng mục} & \textbf{Giá trị} \\
+\midrule
+GPU & NVIDIA RTX PRO 6000 Blackwell \\
+Batch size & $1$ \\
+Warm-up & $30$ vòng \\
+Số vòng đo & $100$ vòng \\
+AMP & Không dùng \\
+Đơn vị báo cáo & Độ trễ trung bình trên một ảnh \\
+\bottomrule
+\end{tabular}
+\caption{Thiết lập benchmark độ trễ suy luận.}
+\label{tab:appendix_latency}
+\end{table}

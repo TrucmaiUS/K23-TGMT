@@ -8,25 +8,55 @@
 Bảng~\ref{tab:current_results} trình bày kết quả của bốn cấu hình trong cùng
 thiết lập huấn luyện từ khởi tạo ImageNet trên Market-1501. Tất cả cấu hình
 đều được huấn luyện $120$ epoch với batch size $64$ và learning rate $0.008$.
+Quá trình huấn luyện và đo độ trễ được thực hiện trên GPU NVIDIA RTX PRO 6000
+Blackwell.
 
 \begin{table*}[!t]
 \centering
 \renewcommand{\arraystretch}{1.12}
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}L{4.0cm}ccccccc@{}}
+\setlength{\tabcolsep}{6pt}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}L{6.2cm}ccccc@{}}
 \toprule
-\textbf{Mô hình} & \textbf{mAP (\%)} & \textbf{Rank-1 (\%)} & \textbf{Rank-5 (\%)} & \textbf{Rank-10 (\%)} & \textbf{Độ trễ (ms)} & \textbf{FPS} & \textbf{\(\Delta\)mAP} \\
+\textbf{Phương pháp} & \textbf{mAP (\%)} & \textbf{Rank-1 (\%)} & \textbf{Rank-5 (\%)} & \textbf{Rank-10 (\%)} & \textbf{Độ trễ (ms)} \\
 \midrule
-Baseline TransReID & 89.2 & 95.1 & 98.3 & 98.9 & 4.626 & 216.1 & -- \\
-Semantic alignment & 89.5 & 95.3 & 98.5 & 99.0 & 4.637 & 215.6 & +0.3 \\
-Local reliability & 89.9 & 95.2 & \textbf{98.6} & \textbf{99.1} & 4.786 & 208.9 & +0.7 \\
-Semantic alignment + local reliability & \textbf{90.1} & \textbf{95.4} & \textbf{98.6} & \textbf{99.1} & 4.783 & 209.1 & \textbf{+0.9} \\
+Baseline TransReID & 89.2 & 95.1 & 98.3 & 98.9 & 4.626 \\
+Semantic alignment & 89.5 & 95.3 & 98.5 & 99.0 & 4.637 \\
+Local reliability & 89.9 & 95.2 & \textbf{98.6} & \textbf{99.1} & 4.786 \\
+Semantic alignment + local reliability & \textbf{90.1} & \textbf{95.4} & \textbf{98.6} & \textbf{99.1} & 4.783 \\
 \bottomrule
-\end{tabular}
-\caption{Kết quả so sánh công bằng trên Market-1501. \(\Delta\)mAP được tính
-so với baseline TransReID trong cùng thiết lập.}
+\end{tabular*}
+\vspace{2pt}
+{\footnotesize Độ trễ được đo với batch size $1$ trên GPU NVIDIA RTX PRO 6000 Blackwell.}
+\caption{Kết quả so sánh công bằng trên Market-1501.}
 \label{tab:current_results}
 \end{table*}
+
+Hình~\ref{fig:market_accuracy_latency} trực quan hóa hai khía cạnh chính của
+kết quả cuối: độ chính xác truy hồi và chi phí suy luận. Hình~\ref{fig:market_validation_curve}
+cho thấy xu hướng hội tụ của các cấu hình qua các lần validation trong quá
+trình huấn luyện.
+
+\begin{figure*}[!t]
+    \centering
+    \begin{minipage}{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/market_accuracy_map_rank1.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/market_latency_ms.png}
+    \end{minipage}
+    \caption{So sánh độ chính xác và độ trễ suy luận của các biến thể trên Market-1501.}
+    \label{fig:market_accuracy_latency}
+\end{figure*}
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=0.82\textwidth]{figures/market_validation_map_curve.png}
+    \caption{Diễn biến validation mAP theo epoch trong quá trình huấn luyện.}
+    \label{fig:market_validation_curve}
+\end{figure*}
 
 \subsection{Hiệu quả của semantic alignment}
 
