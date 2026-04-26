@@ -5,58 +5,18 @@
 \section{Thiết lập thực nghiệm}
 \label{sec:experimental_setup}
 
-\subsection{Bộ dữ liệu và giao thức đánh giá}
-
-Các thực nghiệm được triển khai cho bài toán Person ReID trên nền kiến trúc TransReID. Về mặt tham chiếu học thuật, nghiên cứu xem xét hai benchmark chuẩn là \textbf{Market-1501}~\cite{zheng2015market1501} và \textbf{DukeMTMC-reID}~\cite{gou2017dukemtmc4reid}. Trong phạm vi phần thực nghiệm này, các kết quả định lượng được báo cáo chủ yếu trên \textbf{Market-1501}.
-
-Market-1501 gồm $12{,}936$ ảnh huấn luyện của $751$ định danh, $3{,}368$ ảnh truy vấn thuộc $750$ định danh và $15{,}913$ ảnh gallery thuộc $751$ định danh, được thu thập từ $6$ camera. Việc đánh giá tuân theo giao thức chuẩn của Person ReID: mô hình được huấn luyện trên tập train và được đánh giá bằng cách truy hồi mẫu đúng trong không gian query--gallery.
-
 \subsection{Chỉ số đánh giá}
 
-Hiệu năng được đo bằng hai nhóm chỉ số chuẩn là \textbf{Cumulative Matching Characteristics} (CMC) và \textbf{mean Average Precision} (mAP). Trong đó, CMC được báo cáo chủ yếu tại các mức \textbf{Rank-1}, \textbf{Rank-5} và \textbf{Rank-10}, còn mAP được dùng làm chỉ số trung tâm khi so sánh các biến thể. Sự lựa chọn này xuất phát từ thực tế rằng các cơ chế gán trọng số, hợp nhất và chọn lọc tác động trực tiếp đến chất lượng sắp hạng toàn cục, nên mAP phản ánh rõ hơn ảnh hưởng của chúng so với một chỉ số Top-1 đơn lẻ.
+Các kết quả được báo cáo trên benchmark \textbf{Market-1501}
+\cite{zheng2015market1501} theo giao thức query--gallery chuẩn của Person
+ReID. Hiệu năng truy hồi được đo bằng mean Average Precision (mAP) và Cumulative
+Matching Characteristics (CMC) tại Rank-1, Rank-5 và Rank-10. Bên cạnh độ chính xác,
+báo cáo thêm độ trễ suy luận để đánh giá chi phí triển khai của từng biến thể.
 
-Các cài đặt chung về backbone, kích thước ảnh, chiến lược tối ưu hóa và giao
-thức suy luận ở Phụ lục~\ref{sec:appendix_experimental_config}.
+\subsection{Các phương pháp so sánh}
 
-\subsection{Hai thiết lập huấn luyện}
-
-Để tránh diễn giải sai đóng góp của phương pháp, các thực nghiệm được tách thành hai thiết lập huấn luyện khác nhau:
-
-\begin{enumerate}
-    \item \textbf{Thiết lập fine-tune từ checkpoint ReID}. Ở thiết lập này, mô hình được khởi tạo từ \texttt{vit\_transreid\_market.pth}, tức là một checkpoint TransReID đã đạt hiệu năng cao trên Market-1501. Thiết lập này phù hợp để đánh giá mức độ tương thích giữa phương pháp đề xuất và một baseline ReID đã được huấn luyện trước.
-    \item \textbf{Thiết lập huấn luyện từ khởi tạo ImageNet}. Ở thiết lập này, mô hình được khởi tạo từ \texttt{jx\_vit\_base\_p16\_224-80ecf9dd.pth}. Vì chưa mang sẵn tri thức ReID chuyên biệt, thiết lập này phản ánh công bằng hơn đóng góp nội tại của kiến trúc đề xuất, dù việc tối ưu hóa cũng khó hơn đáng kể.
-\end{enumerate}
-
-Hai thiết lập trên được tách thành hai phần riêng. Thiết lập fine-tune từ checkpoint ReID cho biết liệu phương pháp có thể được tích hợp vào một mô hình ReID đã được huấn luyện trước mà không làm suy giảm hiệu năng hay không. Trong khi đó, thiết lập huấn luyện từ khởi tạo ImageNet thích hợp hơn để đánh giá mức độ tự thân của phương pháp khi mô hình phải học lại biểu diễn ReID từ đầu.
-
-\subsection{Các biến thể được khảo sát}
-
-Các biến thể được gọi bằng tên mô tả trực tiếp thay cho các ký hiệu nội bộ. Các cấu hình được nhóm theo hai thiết lập khởi tạo, như tóm tắt trong Bảng~\ref{tab:variant_overview}.
-
-\begin{table*}[!t]
-\centering
-\renewcommand{\arraystretch}{1.15}
-\setlength{\tabcolsep}{5pt}
-\begin{tabular}{@{}L{4.8cm}L{11.0cm}@{}}
-\toprule
-\textbf{Biến thể} & \textbf{Nội dung khảo sát chính} \\
-\midrule
-\multicolumn{2}{@{}l}{\textbf{Thiết lập fine-tune từ checkpoint ReID}} \\
-\cmidrule(lr){1-2}
-Hợp nhất toàn cục có trọng số & Hợp nhất tuyến tính giữa đặc trưng toàn cục gốc và đặc trưng patch có trọng số với \(\alpha=0.8\). \\
-Cấu hình đối chứng cận baseline & Đặt \(\alpha=1.0\) để triệt giảm đóng góp trực tiếp của nhánh patch vào đầu ra, qua đó tạo một đối chứng gần với baseline. \\
-Gán trọng số ở mức JPM & Áp dụng cơ chế gán trọng số trên các nhánh cục bộ của JPM nhằm khảo sát tích hợp ở mức vùng. \\
-Chọn lọc top-k theo foreground & Giữ lại các patch có foreground score cao nhất trước khi tạo đặc trưng truy hồi nhằm kiểm tra khả năng chọn lọc vùng nhìn thấy đáng tin cậy. \\
-\addlinespace[2pt]
-\multicolumn{2}{@{}l}{\textbf{Thiết lập huấn luyện từ khởi tạo ImageNet}} \\
-\cmidrule(lr){1-2}
-Thay thế trực tiếp đặc trưng toàn cục & Thay trực tiếp đặc trưng toàn cục bằng đặc trưng patch đã được gán trọng số để kiểm tra khả năng thay thế hoàn toàn nhánh toàn cục. \\
-Hiệu chỉnh residual có cổng & Tích hợp nhánh patch dưới dạng hiệu chỉnh residual với cổng học được nhằm bảo toàn vai trò trung tâm của đặc trưng toàn cục trong giai đoạn đầu huấn luyện. \\
-OVTF & Kết hợp gán trọng số theo khả năng quan sát, bổ sung token động, hợp nhất tại JPM và tăng cường che khuất tổng hợp. \\
-\bottomrule
-\end{tabular}
-\caption{Tổng quan các biến thể được khảo sát.}
-\label{tab:variant_overview}
-\end{table*}
-
-Các thực nghiệm được thiết kế để trả lời ba câu hỏi chính: (i) liệu đặc trưng theo patch có thể thay thế trực tiếp biểu diễn toàn cục hay không, (ii) liệu việc tích hợp có kiểm soát ở mức toàn cục hoặc residual có phù hợp hơn không, và (iii) trong điều kiện huấn luyện từ khởi tạo ImageNet, biến thể nào duy trì được sự ổn định hội tụ tốt nhất.
+Thực nghiệm so sánh bốn mô hình: TransReID baseline, TransReID với semantic
+alignment, TransReID với local reliability, và bản kết hợp semantic alignment
+với local reliability. Tất cả mô hình dùng cùng backbone TransReID stride với
+JPM và SIE camera; khác biệt giữa các cấu hình chỉ nằm ở các thành phần phụ trợ
+được mô tả trong Mục~\ref{sec:proposed_method}.
