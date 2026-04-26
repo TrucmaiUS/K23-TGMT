@@ -8,22 +8,11 @@ MODEL:
   NO_MARGIN: True
   DEVICE_ID: ('5')
   TRANSFORMER_TYPE: 'vit_base_patch16_224_TransReID'
-  STRIDE_SIZE: [12, 12]
+  STRIDE_SIZE: [11, 11]
   SIE_CAMERA: True
   SIE_COE: 3.0
   JPM: True
   RE_ARRANGE: True
-  RELIABILITY_PIPELINE: True
-  REL_HIDDEN_DIM: 256
-  REL_USE_SOFTMAX: False
-  REL_FUSION_ALPHA: 0.05
-  REL_GATE_INIT: -4.0
-  REL_REG_WEIGHT: 0.0
-  REL_REG_TYPE: 'entropy'
-  REL_VIS_LOSS_WEIGHT: 0.10
-  REL_CONSIST_LOSS_WEIGHT: 0.10
-  REL_METRIC_LOSS_WEIGHT: 0.00
-  REL_DETACH_CONSIST_WEIGHTS: True
 
 INPUT:
   SIZE_TRAIN: [256, 128]
@@ -33,14 +22,9 @@ INPUT:
   PADDING: 10
   PIXEL_MEAN: [0.5, 0.5, 0.5]
   PIXEL_STD: [0.5, 0.5, 0.5]
-  REL_OCC_PROB: 1.0
-  REL_OCC_MIN_AREA: 0.10
-  REL_OCC_MAX_AREA: 0.28
-  REL_OCC_MIN_ASPECT: 0.5
-  REL_OCC_FILL: 0.0
 
 DATASETS:
-  NAMES: ('market1501')
+  NAMES: ('occ_duke')
   ROOT_DIR: ('../../data')
 
 DATALOADER:
@@ -73,4 +57,4 @@ TEST:
   USE_JPM_FUSION: True
   SAVE_BEST: True
 
-OUTPUT_DIR: '../logs/market_vit_transreid_stride_local_reliability'
+OUTPUT_DIR: '../logs/fair_occ_duke_baseline'

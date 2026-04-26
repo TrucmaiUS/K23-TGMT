@@ -8,7 +8,7 @@ MODEL:
   NO_MARGIN: True
   DEVICE_ID: ('5')
   TRANSFORMER_TYPE: 'vit_base_patch16_224_TransReID'
-  STRIDE_SIZE: [12, 12]
+  STRIDE_SIZE: [11, 11]
   SIE_CAMERA: True
   SIE_COE: 3.0
   JPM: True
@@ -66,7 +66,7 @@ INPUT:
   REL_OCC_FILL: 0.0
 
 DATASETS:
-  NAMES: ('market1501')
+  NAMES: ('occ_duke')
   ROOT_DIR: ('../../data')
 
 DATALOADER:
@@ -99,4 +99,4 @@ TEST:
   USE_JPM_FUSION: True
   SAVE_BEST: True
 
-OUTPUT_DIR: '../logs/market_vit_transreid_stride_sem_decoder_reliability'
+OUTPUT_DIR: '../logs/occ_duke_vit_transreid_stride_sem_decoder_reliability'

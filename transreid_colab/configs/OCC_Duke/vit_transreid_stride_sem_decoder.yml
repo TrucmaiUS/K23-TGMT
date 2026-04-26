@@ -8,22 +8,11 @@ MODEL:
   NO_MARGIN: True
   DEVICE_ID: ('5')
   TRANSFORMER_TYPE: 'vit_base_patch16_224_TransReID'
-  STRIDE_SIZE: [12, 12]
+  STRIDE_SIZE: [11, 11]
   SIE_CAMERA: True
   SIE_COE: 3.0
   JPM: True
   RE_ARRANGE: True
-  RELIABILITY_PIPELINE: True
-  REL_HIDDEN_DIM: 256
-  REL_USE_SOFTMAX: False
-  REL_FUSION_ALPHA: 0.05
-  REL_GATE_INIT: -4.0
-  REL_REG_WEIGHT: 0.0
-  REL_REG_TYPE: 'entropy'
-  REL_VIS_LOSS_WEIGHT: 0.10
-  REL_CONSIST_LOSS_WEIGHT: 0.10
-  REL_METRIC_LOSS_WEIGHT: 0.00
-  REL_DETACH_CONSIST_WEIGHTS: True
   SEM_ALIGN:
     ENABLED: True
     NUM_PARTS: 6
@@ -35,7 +24,7 @@ MODEL:
     LAMBDA_SEP: 0.0
     LAMBDA_BATCH: 0.0
     LAMBDA_PATCH: 0.0
-    LAMBDA_PIXEL: 0.05
+    LAMBDA_PIXEL: 0.1
     SEP_MARGIN: 0.2
     MATCH_TEMPERATURE: 0.07
     EPS: 1e-6
@@ -59,26 +48,21 @@ INPUT:
   PADDING: 10
   PIXEL_MEAN: [0.5, 0.5, 0.5]
   PIXEL_STD: [0.5, 0.5, 0.5]
-  REL_OCC_PROB: 1.0
-  REL_OCC_MIN_AREA: 0.10
-  REL_OCC_MAX_AREA: 0.28
-  REL_OCC_MIN_ASPECT: 0.5
-  REL_OCC_FILL: 0.0
 
 DATASETS:
-  NAMES: ('market1501')
+  NAMES: ('occ_duke')
   ROOT_DIR: ('../../data')
 
 DATALOADER:
   SAMPLER: 'softmax_triplet'
   NUM_INSTANCE: 4
-  NUM_WORKERS: 2
+  NUM_WORKERS: 8
 
 SOLVER:
   OPTIMIZER_NAME: 'SGD'
   MAX_EPOCHS: 120
-  BASE_LR: 0.002
-  IMS_PER_BATCH: 16
+  BASE_LR: 0.004
+  IMS_PER_BATCH: 32
   WARMUP_METHOD: 'linear'
   WARMUP_EPOCHS: 10
   LARGE_FC_LR: False
@@ -99,4 +83,4 @@ TEST:
   USE_JPM_FUSION: True
   SAVE_BEST: True
 
-OUTPUT_DIR: '../logs/market_vit_transreid_stride_sem_decoder_reliability'
+OUTPUT_DIR: '../logs/occ_duke_vit_transreid_stride_sem_decoder'
